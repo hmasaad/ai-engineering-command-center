@@ -10,6 +10,7 @@ import {
 import { Field, fieldClass } from "@/components/ui";
 import { SubmitButton } from "@/components/submit-button";
 import { ReleaseFlow } from "@/components/release-flow";
+import { TaskGraphAscii } from "@/components/task-graph";
 
 export function AutonomousIntentForm({
   projects,
@@ -18,7 +19,7 @@ export function AutonomousIntentForm({
 }) {
   const [error, setError] = useState<string | null>(null);
   const [projectId, setProjectId] = useState(projects[0]?.id || "");
-  const [intent, setIntent] = useState("Prepare release 2.4.0");
+  const [intent, setIntent] = useState("Review this PR and prepare a fix.");
   const parsed = useMemo(() => parseEngineeringIntent(intent), [intent]);
 
   if (projects.length === 0) {
@@ -49,7 +50,7 @@ export function AutonomousIntentForm({
           required
           value={intent}
           onChange={(event) => setIntent(event.target.value)}
-          placeholder='Prepare release 2.4.0'
+          placeholder="Review this PR and prepare a fix."
           className={fieldClass}
         />
       </Field>
@@ -116,11 +117,15 @@ export function AutonomousIntentForm({
               {Math.round(parsed.confidence * 100)}% match
             </span>
           </div>
-          <ReleaseFlow playbook={parsed.playbookName} />
+          {parsed.id === "pr_fix" ? (
+            <TaskGraphAscii title="The orchestrator creates" />
+          ) : (
+            <ReleaseFlow playbook={parsed.playbookName} />
+          )}
         </div>
       ) : (
         <p className="text-sm text-muted">
-          Type a goal such as “Prepare release 2.4.0”. Command Center will pick the playbook and the specialists.
+          Type a goal such as “Review this PR and prepare a fix.” Command Center will expand it into a task graph.
         </p>
       )}
 

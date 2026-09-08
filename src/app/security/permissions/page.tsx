@@ -16,8 +16,13 @@ export default async function ToolPermissionsPage() {
       <PageHeader
         kicker="Gateway policy"
         title="Tool Permission Manager"
-        description="The Agent Security Gateway reads this table on every tool request. Allow, require a human, or deny — per tool, globally or per agent."
-        actions={<GhostLink href="/security">Back to Security</GhostLink>}
+        description="The Policy Engine reads this table on every Tool Gateway request. Allow, deny, or hold for approval — per tool, globally or per agent."
+        actions={
+          <>
+            <GhostLink href="/security/tools">Tool Layer</GhostLink>
+            <GhostLink href="/security">Back to Security</GhostLink>
+          </>
+        }
       />
 
       <section className="mb-8 rounded-xl border border-line bg-panel/80 p-5">

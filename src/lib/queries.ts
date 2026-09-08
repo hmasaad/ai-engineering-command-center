@@ -28,7 +28,7 @@ export async function getCommandCenterData() {
     workflows,
   ] = await Promise.all([
     db.project.count(),
-    db.agent.count({ where: { status: "active" } }),
+    db.agent.count({ where: { enabled: true } }),
     db.task.count({
       where: { status: { in: ["open", "in_progress", "awaiting_approval"] } },
     }),

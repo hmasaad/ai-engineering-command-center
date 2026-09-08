@@ -14,6 +14,7 @@ const items = [
   { href: "/development", label: "Development", group: "intel" },
   { href: "/operations", label: "Operations", group: "intel" },
   { href: "/security", label: "Security", group: "intel" },
+  { href: "/security/tools", label: "Tool Layer", group: "intel" },
   { href: "/autonomous", label: "Autonomous", group: "intel" },
   { href: "/workflows", label: "Workflows", group: "run" },
   { href: "/approvals", label: "Approvals", group: "run" },
@@ -23,6 +24,7 @@ const items = [
 
 function isActive(pathname: string, href: string) {
   if (href === "/") return pathname === "/";
+  if (href === "/security" && pathname.startsWith("/security/tools")) return false;
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 

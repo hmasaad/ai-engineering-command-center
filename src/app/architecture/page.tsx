@@ -24,7 +24,7 @@ export default function ArchitecturePage() {
       <ControlPlaneAscii />
 
       <p className="mt-3 max-w-3xl text-xs text-muted">
-        Tool execution and agent execution fork in parallel, then rejoin. Side effects — patch apply, deploy, rollback, database writes — wait until Verification, Observability, and Risk / Approval have all run. That last node is Execution.
+        Tool execution and agent execution fork in parallel, then rejoin. Side effects — create_pr, CI, deploy, rollback — wait until Verification, Observability, and Risk / Approval have all run. That last node is Execution. Agents never skip the Tool Gateway.
       </p>
 
       <div className="mt-8 space-y-3">

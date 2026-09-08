@@ -2,11 +2,10 @@ import { cx } from "@/lib/utils";
 
 const STAGES = [
   { id: "agent", label: "Agent" },
-  { id: "tool", label: "Tool request" },
-  { id: "gateway", label: "Security Gateway" },
-  { id: "policy", label: "Policy evaluation" },
-  { id: "score", label: "Risk score" },
-  { id: "verdict", label: "Allow / Deny / Human" },
+  { id: "tool", label: "Tool Request" },
+  { id: "gateway", label: "Tool Gateway" },
+  { id: "policy", label: "Policy Engine" },
+  { id: "verdict", label: "Allow / Deny / Approval" },
 ] as const;
 
 export function GatewayPipeline({
@@ -27,10 +26,13 @@ export function GatewayPipeline({
           ? "live"
           : "muted";
 
+  const verdictLabel =
+    verdict === "human" ? "approval" : verdict === "allow" ? "allow" : verdict === "deny" ? "deny" : verdict;
+
   return (
     <div className="rounded-xl border border-line bg-panel/80 p-5">
       <div className="mb-3 font-mono text-[10px] uppercase tracking-[0.22em] text-muted">
-        Agent Security Gateway
+        Tool Gateway
       </div>
       <div className="flex flex-col gap-2">
         {STAGES.map((stage, index) => (
@@ -59,9 +61,9 @@ export function GatewayPipeline({
                   {toolName}
                 </span>
               ) : null}
-              {stage.id === "score" && typeof riskScore === "number" ? (
+              {stage.id === "policy" && typeof riskScore === "number" ? (
                 <span className="ml-2 font-mono text-[11px] text-muted">
-                  {riskScore}/100
+                  risk {riskScore}/100
                 </span>
               ) : null}
               {stage.id === "verdict" && verdict ? (
@@ -75,7 +77,7 @@ export function GatewayPipeline({
                         : "text-live",
                   )}
                 >
-                  {verdict}
+                  {verdictLabel}
                 </span>
               ) : null}
             </div>

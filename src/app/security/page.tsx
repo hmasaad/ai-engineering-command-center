@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { GatewayPipeline } from "@/components/gateway-pipeline";
 import { SecurityRunForm } from "@/components/security-run-form";
-import { EmptyState, PageHeader, PrimaryLink, StatusBadge } from "@/components/ui";
+import { EmptyState, GhostLink, PageHeader, PrimaryLink, StatusBadge } from "@/components/ui";
 import { db } from "@/lib/db";
 import { SECURITY_SERVICES } from "@/lib/security";
 import { formatRelative } from "@/lib/utils";
@@ -35,7 +35,12 @@ export default async function SecurityPage() {
         kicker="Phase 3"
         title="Security"
         description="Prompt injection, hijack, RAG poisoning, MCP, exfil, permissions, review, gateway, and threat response are Command Center services. Every agent tool request still passes the Agent Security Gateway."
-        actions={<PrimaryLink href="/security/permissions">Tool permissions</PrimaryLink>}
+        actions={
+          <>
+            <GhostLink href="/security/tools">Tool Layer</GhostLink>
+            <PrimaryLink href="/security/permissions">Tool permissions</PrimaryLink>
+          </>
+        }
       />
 
       <div className="mb-8 grid gap-6 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]">

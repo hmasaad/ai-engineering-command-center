@@ -2,6 +2,7 @@ export const AGENT_ROLES = [
   { value: "architect", label: "AI Software Architect" },
   { value: "developer", label: "AI Developer" },
   { value: "pr_reviewer", label: "PR Reviewer" },
+  { value: "code_reviewer", label: "Code Reviewer" },
   { value: "bug_investigation", label: "Bug Investigation" },
   { value: "test_generation", label: "Test Generation" },
   { value: "test_failure", label: "Test Failure Analyzer" },
@@ -93,6 +94,8 @@ export const STATUS_LABELS: Record<string, string> = {
   approved: "Approved",
   rejected: "Rejected",
   denied: "Denied by gateway",
+  enabled: "Enabled",
+  disabled: "Disabled",
   awaiting_gateway: "Gateway hold",
   allowed: "Allowed",
 };

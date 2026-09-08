@@ -11,6 +11,16 @@ import {
   type PermissionMode,
   type ToolName,
 } from "@/lib/security";
+import { TOOL_REQUIRED_PERMISSION } from "@/lib/registry";
+import {
+  canonicalizeTool,
+  declaredLayerTools,
+  isPlatformTool,
+  isToolLayerName,
+  permissionLookupNames,
+  toolMentionedInText,
+} from "@/lib/tool-layer";
+import { parseJson } from "@/lib/utils";
 
 export type ProposedTool = {
   name: ToolName;
@@ -39,7 +49,7 @@ export function proposeTools(input: {
   task: Task;
 }): ProposedTool[] {
   const text = `${input.task.title}\n${input.task.description}\n${input.instruction || ""}`;
-  const tools: ProposedTool[] = [
+  let tools: ProposedTool[] = [
     {
       name: "artifact.write",
       action: "emit",
@@ -49,7 +59,7 @@ export function proposeTools(input: {
 
   if (input.project.githubUrl) {
     tools.push({
-      name: "github.fetch",
+      name: "github.read_file",
       action: "read",
       arguments: {
         repo: `${input.project.githubOwner}/${input.project.githubRepo}`,
@@ -66,23 +76,48 @@ export function proposeTools(input: {
     (action === "implement" || action === "refactor")
   ) {
     tools.push({
-      name: "repo.read",
-      action: "read",
+      name: "github.search_code",
+      action: "search",
       arguments: { path: "linked-repo" },
     });
     tools.push({
-      name: "github.patch",
+      name: "github.create_branch",
+      action: "propose",
+      arguments: { title: input.task.title },
+    });
+    tools.push({
+      name: "github.create_pr",
       action: "propose",
       arguments: { title: input.task.title },
     });
   }
 
-  if (role === "pr_reviewer" || role === "reviewer") {
+  if (role === "pr_reviewer" || role === "reviewer" || role === "code_reviewer") {
     tools.push({
-      name: "github.comment",
-      action: "review",
+      name: "github.get_diff",
+      action: "diff",
       arguments: { focus: input.task.focusRef || null },
     });
+    tools.push({
+      name: "github.search_code",
+      action: "search",
+      arguments: { focus: input.task.focusRef || null },
+    });
+  }
+
+  if (role === "qa" || role === "test_generation" || role === "test_failure") {
+    tools.push({
+      name: "ci.run_tests",
+      action: "run",
+      arguments: { suite: "default" },
+    });
+    if (role === "qa") {
+      tools.push({
+        name: "ci.run_lint",
+        action: "run",
+        arguments: {},
+      });
+    }
   }
 
   if (role === "documentation" || role === "rag_poisoning" || /retriev|corpus|web\.fetch/i.test(text)) {
@@ -147,12 +182,12 @@ export function proposeTools(input: {
     )
   ) {
     tools.push({
-      name: "logs.read",
+      name: "observability.get_logs",
       action: "read",
       arguments: { window: "incident" },
     });
     tools.push({
-      name: "metrics.read",
+      name: "observability.get_metrics",
       action: "read",
       arguments: { slo: true },
     });
@@ -183,13 +218,13 @@ export function proposeTools(input: {
 
   if (role === "build" || action === "build") {
     tools.push({
-      name: "repo.read",
+      name: "github.read_file",
       action: "read",
       arguments: { path: "linked-repo" },
     });
     tools.push({
-      name: "build.plan",
-      action: "plan",
+      name: "ci.build",
+      action: "build",
       arguments: { version: input.task.title },
     });
   }
@@ -201,10 +236,30 @@ export function proposeTools(input: {
       arguments: { env: "production" },
     });
     tools.push({
-      name: "metrics.read",
+      name: "observability.get_metrics",
       action: "read",
       arguments: { slo: true },
     });
+  }
+
+  const declaredTools = parseJson<string[]>(input.agent.tools, []);
+  if (declaredTools.length > 0) {
+    const declaredCanonical = declaredLayerTools(declaredTools);
+    const declared = declaredCanonical
+      .map((name) => toolFromRegistry(name, input))
+      .filter((item): item is ProposedTool => item !== null);
+    const extraDanger: ProposedTool[] = [];
+    const seenDanger = new Set<string>();
+    for (const name of DANGEROUS_TOOLS) {
+      const canonical = canonicalizeTool(name);
+      if (seenDanger.has(canonical)) continue;
+      seenDanger.add(canonical);
+      if (declaredCanonical.includes(canonical)) continue;
+      if (!toolMentionedInText(canonical, text)) continue;
+      const proposed = toolFromRegistry(canonical, input);
+      if (proposed) extraDanger.push(proposed);
+    }
+    tools = [...declared, ...extraDanger];
   }
 
   const seen = new Set<string>();
@@ -216,8 +271,106 @@ export function proposeTools(input: {
   });
 }
 
+function toolFromRegistry(
+  name: string,
+  input: {
+    agent: Agent;
+    action: string;
+    project: Project;
+    task: Task;
+  },
+): ProposedTool | null {
+  const canonical = canonicalizeTool(name);
+  if (!TOOLS.some((item) => item.name === canonical) && !TOOLS.some((item) => item.name === name)) {
+    return null;
+  }
+  const toolName = (TOOLS.some((item) => item.name === canonical) ? canonical : name) as ToolName;
+  const repo = `${input.project.githubOwner}/${input.project.githubRepo}`;
+  if (toolName === "artifact.write") {
+    return {
+      name: toolName,
+      action: "emit",
+      arguments: { task: input.task.title, agent: input.agent.slug },
+    };
+  }
+  if (
+    toolName === "github.read_file" ||
+    toolName === "github.read" ||
+    toolName === "github.fetch" ||
+    toolName === "repo.read"
+  ) {
+    return {
+      name: "github.read_file",
+      action: "read",
+      arguments: { repo, focus: input.task.focusRef || null },
+    };
+  }
+  if (toolName === "github.search_code") {
+    return {
+      name: toolName,
+      action: "search",
+      arguments: { repo, query: input.task.title },
+    };
+  }
+  if (toolName === "github.get_diff" || toolName === "github.diff" || toolName === "github.comment") {
+    return {
+      name: "github.get_diff",
+      action: "diff",
+      arguments: { repo, focus: input.task.focusRef || null },
+    };
+  }
+  if (toolName === "github.create_branch") {
+    return {
+      name: toolName,
+      action: "propose",
+      arguments: { repo, title: input.task.title },
+    };
+  }
+  if (toolName === "github.create_pr" || toolName === "github.patch") {
+    return {
+      name: "github.create_pr",
+      action: "propose",
+      arguments: { repo, title: input.task.title },
+    };
+  }
+  if (toolName === "ci.run_tests" || toolName === "ci.run_lint") {
+    return {
+      name: toolName,
+      action: "run",
+      arguments: { suite: "default" },
+    };
+  }
+  if (toolName === "ci.build" || toolName === "build.plan") {
+    return {
+      name: "ci.build",
+      action: "build",
+      arguments: { version: input.task.title },
+    };
+  }
+  if (toolName === "observability.get_logs" || toolName === "logs.read") {
+    return {
+      name: "observability.get_logs",
+      action: "read",
+      arguments: { window: "incident" },
+    };
+  }
+  if (toolName === "observability.get_metrics" || toolName === "metrics.read") {
+    return {
+      name: "observability.get_metrics",
+      action: "read",
+      arguments: { slo: true },
+    };
+  }
+  return {
+    name: toolName,
+    action: input.action,
+    arguments: { agent: input.agent.slug },
+  };
+}
+
 function toolMeta(name: string) {
-  return TOOLS.find((item) => item.name === name);
+  const canonical = canonicalizeTool(name);
+  return TOOLS.find((item) => item.name === canonical) ?? TOOLS.find((item) => item.name === name);
 }
 
 function permissionFor(
@@ -225,14 +378,20 @@ function permissionFor(
   agentSlug: string,
   toolName: string,
 ): PermissionMode {
-  const specific = permissions.find(
-    (row) => row.agentSlug === agentSlug && row.toolName === toolName,
-  );
-  const global = permissions.find(
-    (row) => row.agentSlug === "*" && row.toolName === toolName,
-  );
-  const mode = (specific?.mode || global?.mode || "require_approval") as PermissionMode;
-  return mode;
+  const names = permissionLookupNames(toolName);
+  for (const name of names) {
+    const specific = permissions.find(
+      (row) => row.agentSlug === agentSlug && row.toolName === name,
+    );
+    if (specific) return specific.mode as PermissionMode;
+  }
+  for (const name of names) {
+    const global = permissions.find(
+      (row) => row.agentSlug === "*" && row.toolName === name,
+    );
+    if (global) return global.mode as PermissionMode;
+  }
+  return "require_approval";
 }
 
 function isSecurityAnalyzer(agent: Agent) {
@@ -299,6 +458,26 @@ export function evaluateToolRequest(input: {
   }
 
   const permissionMode = permissionFor(input.permissions, input.agent.slug, input.tool.name);
+  const canonicalTool = canonicalizeTool(input.tool.name);
+  const knownTool = Boolean(toolMeta(input.tool.name)) || isToolLayerName(input.tool.name);
+  const declaredTools = parseJson<string[]>(input.agent.tools, []);
+  const declaredCanonical = declaredLayerTools(declaredTools);
+  const grants = parseJson<string[]>(input.agent.permissions, []);
+  const requiredGrant =
+    TOOL_REQUIRED_PERMISSION[canonicalTool] ?? TOOL_REQUIRED_PERMISSION[input.tool.name];
+  const analyzer = isSecurityAnalyzer(input.agent);
+  const undeclared =
+    !analyzer &&
+    declaredCanonical.length > 0 &&
+    !isPlatformTool(canonicalTool) &&
+    !declaredCanonical.includes(canonicalTool) &&
+    !declaredTools.includes(input.tool.name);
+  const missingGrant =
+    !analyzer &&
+    grants.length > 0 &&
+    Boolean(requiredGrant) &&
+    !grants.includes(requiredGrant);
+
   if (policyOn("tool_permission")) {
     if (permissionMode === "deny") {
       hits.push({
@@ -315,6 +494,22 @@ export function evaluateToolRequest(input: {
         detail: `${input.tool.name} requires human approval (${input.agent.name}).`,
       });
     }
+    if (undeclared) {
+      hits.push({
+        id: "tool_permission",
+        name: "Agent Registry",
+        score: enabled.tool_permission ?? 40,
+        detail: `${input.tool.name} is not in ${input.agent.slug}’s declared tools.`,
+      });
+    }
+    if (missingGrant && requiredGrant) {
+      hits.push({
+        id: "tool_permission",
+        name: "Agent Registry",
+        score: enabled.tool_permission ?? 40,
+        detail: `${input.agent.slug} is missing permission ${requiredGrant}.`,
+      });
+    }
   }
 
   const unique = mergeHits(hits);
@@ -325,16 +520,30 @@ export function evaluateToolRequest(input: {
   const riskScore = Math.min(100, 6 + toolRisk + priorityBump + Math.round(detectorScore * 0.45));
 
   const reasons = unique.map((hit) => `${hit.name}: ${hit.detail}`);
-  const analyzer = isSecurityAnalyzer(input.agent);
-  const dangerous = (DANGEROUS_TOOLS as string[]).includes(input.tool.name);
+  const dangerous =
+    (DANGEROUS_TOOLS as string[]).includes(input.tool.name) ||
+    (DANGEROUS_TOOLS as string[]).includes(canonicalTool);
   const hostile = unique.some((hit) =>
     ["prompt_injection", "agent_hijacking", "rag_poisoning", "data_exfiltration"].includes(hit.id),
   );
 
   let verdict: GatewayDecision["verdict"] = "allow";
-  if (permissionMode === "deny") {
+  if (!knownTool) {
     verdict = "deny";
-    reasons.push(`Policy: ${input.tool.name} is denied.`);
+    reasons.push(
+      "Tool is not in the Tool Layer catalog. Agents cannot call GitHub, CI, or observability APIs directly.",
+    );
+  } else if (permissionMode === "deny" || undeclared || missingGrant) {
+    verdict = "deny";
+    if (permissionMode === "deny") {
+      reasons.push(`Policy: ${input.tool.name} is denied.`);
+    }
+    if (undeclared) {
+      reasons.push(`Registry: ${input.tool.name} is not in this agent’s tools.`);
+    }
+    if (missingGrant && requiredGrant) {
+      reasons.push(`Registry: missing permission ${requiredGrant}.`);
+    }
   } else if (riskScore >= 88 && dangerous && !analyzer) {
     verdict = "deny";
     reasons.push("Risk score at deny threshold for a side-effecting tool.");
@@ -448,4 +657,17 @@ export async function evaluatePhase(input: {
   );
 
   return { decision: strictest(decisions), tools };
+}
+
+/** Public Tool Gateway entry. Agents request tools; they never call GitHub, CI, or observability directly. */
+export async function requestTool(input: {
+  agent: Agent;
+  action: string;
+  instruction?: string | null;
+  project: Project;
+  task: Task;
+  phase: "preflight" | "postflight";
+  extraText?: string;
+}) {
+  return evaluatePhase(input);
 }

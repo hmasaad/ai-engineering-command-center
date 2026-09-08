@@ -20,6 +20,7 @@ import {
   SECURITY_PLAYBOOKS,
   SECURITY_SERVICES,
 } from "../src/lib/security";
+import { specFromService, specToDb } from "../src/lib/registry";
 
 const db = new PrismaClient();
 
@@ -76,26 +77,12 @@ async function main() {
     ...AUTONOMOUS_SERVICES,
   ];
   for (const service of catalog) {
+    const spec = specFromService(service);
+    const data = specToDb(spec);
     await db.agent.upsert({
-      where: { slug: service.slug },
-      update: {
-        name: service.name,
-        role: service.role,
-        domain: service.domain,
-        description: service.description,
-        capabilities: JSON.stringify(service.capabilities),
-        systemPrompt: service.systemPrompt,
-        status: "active",
-      },
-      create: {
-        slug: service.slug,
-        name: service.name,
-        role: service.role,
-        domain: service.domain,
-        description: service.description,
-        capabilities: JSON.stringify(service.capabilities),
-        systemPrompt: service.systemPrompt,
-      },
+      where: { slug: spec.id },
+      update: data,
+      create: data,
     });
   }
 

@@ -16,6 +16,7 @@ import {
   scanUntrustedText,
 } from "@/lib/security";
 import { extractReleaseVersion } from "@/lib/autonomous";
+import { toAgentRecord } from "@/lib/registry";
 import { parseJson, truncate } from "@/lib/utils";
 
 export type RunContext = {
@@ -743,7 +744,7 @@ async function toolPermissions(ctx: RunContext) {
   );
   const fallback = TOOLS.map((tool) => `| \`${tool.name}\` | * | allow/deny per seed | ${tool.description} |`);
   return `${header(ctx, "Tool permission table")}
-The Agent Security Gateway reads this table on every tool request.
+The Agent Security Gateway reads this table on every Tool Layer request. Agents never call GitHub, CI, or observability directly.
 
 | Tool | Agent | Mode | Note |
 | --- | --- | --- | --- |
@@ -893,7 +894,7 @@ ${prior(ctx)}
 1. Install / lockfile check (read-only).
 2. Typecheck + unit + the Test Suite cases from upstream.
 3. Stamp **${version}**.
-4. Produce the artifact list. **Do not run \`shell.exec\`.** \`build.plan\` is an artifact, not a compiler.
+4. Produce the artifact list. **Do not run \`shell.exec\`.** \`ci.build\` is a Tool Layer request, not a compiler.
 
 ## Gate
 Build is planned. Deployment Risk Analysis still has to score go / no-go. A human still approves before \`deploy.apply\`.
@@ -932,12 +933,50 @@ function slugTest(title: string) {
     .slice(0, 40) || "change";
 }
 
+function genericAgent(ctx: RunContext) {
+  const spec = toAgentRecord(ctx.agent);
+  const tools = spec.tools.length ? spec.tools.map((tool) => `- \`${tool}\``).join("\n") : "- none declared";
+  const permissions = spec.permissions.length
+    ? spec.permissions.map((item) => `- \`${item}\``).join("\n")
+    : "- none declared";
+  const capabilities = spec.capabilities.length
+    ? spec.capabilities.map((item) => `- ${item}`).join("\n")
+    : "- none declared";
+  return `${header(ctx, spec.name)}
+## Registry
+This run is bound to **${spec.name}** (\`${spec.id}\`) from the Agent Registry. Role and tools come from the record, not from the prompt.
+
+- **Model:** \`${spec.model}\`
+- **Risk:** ${spec.riskLevel}
+- **Enabled:** ${spec.enabled ? "yes" : "no"}
+
+## Charter
+${spec.systemPrompt}
+
+## Capabilities
+${capabilities}
+
+## Tools
+${tools}
+
+## Permissions
+${permissions}
+
+## Assessment
+Stay inside the declared tools and permissions. Undeclared side effects (patch, deploy, shell, secrets) are gateway-denied.
+
+## Upstream
+${prior(ctx)}
+${footer(ctx)}`;
+}
+
 const runners: Record<string, (ctx: RunContext) => string | Promise<string>> = {
   architect,
   developer,
   qa,
   reviewer,
   pr_reviewer: prReviewer,
+  code_reviewer: prReviewer,
   bug_investigation: bugInvestigation,
   test_generation: testGeneration,
   test_failure: testFailure,
@@ -1020,6 +1059,6 @@ export async function runSpecialist(input: {
     pullRequest: focus.pullRequest,
     issue: focus.issue,
   };
-  const runner = runners[input.agent.role] ?? architect;
+  const runner = runners[input.agent.role] ?? genericAgent;
   return (await runner(ctx)).trim();
 }

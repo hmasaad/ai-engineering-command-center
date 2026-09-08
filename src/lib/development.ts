@@ -12,6 +12,10 @@ export type ServiceDef = {
   domain: "development" | "operations" | "security" | "autonomous";
   description: string;
   capabilities: string[];
+  tools?: string[];
+  permissions?: string[];
+  model?: string;
+  riskLevel?: "low" | "medium" | "high" | "critical";
   systemPrompt: string;
   defaultAction: string;
   requiresApproval: boolean;
@@ -172,6 +176,23 @@ export const PLATFORM_SERVICES: ServiceDef[] = [
     capabilities: ["Code review lens", "Blast-radius checks", "Approval gates", "Reject-with-reason"],
     systemPrompt:
       "You are the Reviewer capability of the AI Engineering Command Center. Recommend approve or reject with reasons.",
+    defaultAction: "review",
+    requiresApproval: true,
+    taskType: "review",
+  },
+  {
+    slug: "code-reviewer",
+    role: "code_reviewer",
+    name: "Code Reviewer",
+    domain: "development",
+    description:
+      "Reviews diffs for bugs, regressions, and security issues. Read-only against the linked repository.",
+    capabilities: ["review_code", "detect_bugs", "detect_security_issues"],
+    tools: ["github.read_file", "github.search_code", "github.get_diff"],
+    permissions: ["read_repository"],
+    riskLevel: "low",
+    systemPrompt:
+      "You are the Code Reviewer in the AI Engineering Command Center registry. Review the diff. Flag bugs and security issues. You may read the repository; you may not patch, deploy, or exec.",
     defaultAction: "review",
     requiresApproval: true,
     taskType: "review",

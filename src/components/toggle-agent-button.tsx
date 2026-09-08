@@ -5,10 +5,10 @@ import { SubmitButton } from "@/components/submit-button";
 
 export function ToggleAgentButton({
   agentId,
-  status,
+  enabled,
 }: {
   agentId: string;
-  status: string;
+  enabled: boolean;
 }) {
   return (
     <form
@@ -16,9 +16,7 @@ export function ToggleAgentButton({
         await toggleAgentStatus(agentId);
       }}
     >
-      <SubmitButton variant="ghost">
-        {status === "active" ? "Deactivate" : "Activate"}
-      </SubmitButton>
+      <SubmitButton variant="ghost">{enabled ? "Disable" : "Enable"}</SubmitButton>
     </form>
   );
 }

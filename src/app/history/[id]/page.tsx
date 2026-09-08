@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ApprovalActions } from "@/components/approval-actions";
 import { GatewayPipeline } from "@/components/gateway-pipeline";
+import { GraphTaskRecord, LiveTaskGraph } from "@/components/task-graph";
 import { GhostLink, PageHeader, StatusBadge } from "@/components/ui";
 import { db } from "@/lib/db";
 import { formatDuration, formatUsd, hydrateMissingSpans } from "@/lib/observability";
@@ -22,6 +23,7 @@ export default async function ExecutionDetailPage({
       task: true,
       workflow: true,
       steps: { include: { agent: true, approvals: true, gatewayEvents: true, span: true }, orderBy: { order: "asc" } },
+      graphTasks: { include: { agent: true }, orderBy: { order: "asc" } },
       events: { orderBy: { createdAt: "asc" } },
       gatewayEvents: { include: { agent: true }, orderBy: { createdAt: "asc" } },
     },
@@ -79,19 +81,28 @@ export default async function ExecutionDetailPage({
         </div>
       ) : null}
 
+      {execution.graphTasks.length > 0 ? (
+        <div className="mb-6">
+          <LiveTaskGraph nodes={execution.graphTasks} />
+        </div>
+      ) : null}
+
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
         <section className="space-y-4">
-          {execution.steps.map((step, index) => (
+          {execution.steps.map((step, index) => {
+            const graphNode = execution.graphTasks.find((node) => node.stepId === step.id);
+            return (
             <article key={step.id} className="rounded-xl border border-line bg-panel/80 p-5">
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <div className="font-mono text-[10px] uppercase tracking-[0.16em] text-muted">
-                    Step {index + 1} · {step.agent.name}
+                    Task #{index + 1} · {step.agent.name}
                   </div>
                   <h2 className="mt-1 font-medium">{step.name}</h2>
                 </div>
                 <StatusBadge status={step.status} />
               </div>
+              {graphNode ? <GraphTaskRecord node={graphNode} /> : null}
               {step.span ? (
                 <div className="mt-3 grid gap-2 font-mono text-[11px] text-muted sm:grid-cols-4">
                   <div>Duration {formatDuration(step.span.durationMs)}</div>
@@ -148,7 +159,8 @@ export default async function ExecutionDetailPage({
                 </div>
               ) : null}
             </article>
-          ))}
+            );
+          })}
         </section>
         <aside className="rounded-xl border border-line bg-panel/80 p-5">
           <h2 className="mb-3 text-sm font-medium">Timeline</h2>

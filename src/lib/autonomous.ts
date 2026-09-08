@@ -1,4 +1,5 @@
 import type { PlaybookDef, ServiceDef } from "@/lib/development";
+import { PR_FIX_PLAYBOOK } from "@/lib/orchestrator/graph";
 
 export const AUTONOMOUS_SERVICES: ServiceDef[] = [
   {
@@ -80,6 +81,7 @@ export const RELEASE_FLOW: Array<{
 ];
 
 export const AUTONOMOUS_PLAYBOOKS: PlaybookDef[] = [
+  PR_FIX_PLAYBOOK,
   {
     name: "Release",
     domain: "autonomous",
@@ -176,6 +178,11 @@ export const AUTONOMOUS_PLAYBOOKS: PlaybookDef[] = [
 
 export const INTENT_EXAMPLES = [
   {
+    id: "pr-fix",
+    label: "Review this PR and prepare a fix",
+    intent: "Review this PR and prepare a fix.",
+  },
+  {
     id: "release-240",
     label: "Prepare release 2.4.0",
     intent: "Prepare release 2.4.0",
@@ -193,12 +200,14 @@ export const INTENT_EXAMPLES = [
 ];
 
 export type EngineeringIntent = {
-  id: "release" | "hotfix";
+  id: "release" | "hotfix" | "pr_fix";
   playbookName: string;
   version: string | null;
   title: string;
   description: string;
   confidence: number;
+  focusKind?: "pr" | "issue" | null;
+  focusRef?: string | null;
 };
 
 export function extractReleaseVersion(text: string) {
@@ -210,6 +219,14 @@ export function extractReleaseVersion(text: string) {
   if (triple?.[1]) return triple[1].replace(/^v/i, "");
   const pair = text.match(/\bv?(\d+\.\d+)\b/);
   if (pair?.[1]) return pair[1].replace(/^v/i, "");
+  return null;
+}
+
+export function extractPrNumber(text: string) {
+  const labeled = text.match(/(?:pr|pull request)\s*#?\s*(\d+)/i);
+  if (labeled?.[1]) return labeled[1];
+  const hash = text.match(/#(\d+)\b/);
+  if (hash?.[1]) return hash[1];
   return null;
 }
 
@@ -230,6 +247,36 @@ export function parseEngineeringIntent(raw: string): EngineeringIntent | null {
       title: text.length <= 90 ? text : `Hotfix: ${text.slice(0, 70).trim()}…`,
       description: `Autonomous Engineering expanded this intent into the Production alert playbook. The developer did not pick specialists.\n\n${text}`,
       confidence: 0.86,
+    };
+  }
+
+  if (
+    /\bpull request\b|\bpr\b/.test(lower) &&
+    /\bfix\b|\bbug\b|\breview\b/.test(lower)
+  ) {
+    const pr = extractPrNumber(text);
+    return {
+      id: "pr_fix",
+      playbookName: "PR fix",
+      version: null,
+      title: text.length <= 90 ? text.replace(/\.$/, "") : "Review PR and prepare a fix",
+      description: `The orchestrator expanded “${text}” into a task graph. Specialists were not assigned by the developer.
+
+1. Analyze PR
+2. Security Review
+3. Bug Analysis
+4. Generate Fix
+5. Run Tests
+6. Review Fix
+7. Human Approval
+
+Each node has an agent, input, dependencies, status, output, tools, risk, and a human gate at the end.
+
+Operator intent:
+${text}`,
+      confidence: 0.93,
+      focusKind: pr ? "pr" : null,
+      focusRef: pr,
     };
   }
 

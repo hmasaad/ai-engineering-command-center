@@ -5,7 +5,7 @@ import { db } from "@/lib/db";
 export default async function NewWorkflowPage() {
   const [agents, projects] = await Promise.all([
     db.agent.findMany({
-      where: { status: "active" },
+      where: { enabled: true },
       orderBy: { name: "asc" },
     }),
     db.project.findMany({ orderBy: { name: "asc" } }),

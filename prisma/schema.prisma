@@ -35,7 +35,12 @@ model Agent {
   domain       String   @default("development")
   description  String
   capabilities String
+  tools        String   @default("[]")
+  permissions  String   @default("[]")
+  model        String   @default("command-center.v1")
   systemPrompt String
+  riskLevel    String   @default("low")
+  enabled      Boolean  @default(true)
   status       String   @default("active")
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
@@ -44,6 +49,7 @@ model Agent {
   executionSteps ExecutionStep[]
   gatewayEvents  GatewayEvent[]
   spans          AgentSpan[]
+  graphTasks     GraphTask[]
 }
 
 model Task {
@@ -81,6 +87,7 @@ model Workflow {
   project    Project?        @relation(fields: [projectId], references: [id], onDelete: SetNull)
   steps      WorkflowStep[]
   executions Execution[]
+  graphTasks GraphTask[]
 }
 
 model WorkflowStep {
@@ -123,6 +130,7 @@ model Execution {
   events         ExecutionEvent[]
   gatewayEvents  GatewayEvent[]
   spans          AgentSpan[]
+  graphTasks     GraphTask[]
 
   @@index([status])
   @@index([projectId])
@@ -145,6 +153,7 @@ model ExecutionStep {
   approvals     Approval[]
   gatewayEvents GatewayEvent[]
   span          AgentSpan?
+  graphTask     GraphTask?
 }
 
 model Approval {
@@ -259,4 +268,38 @@ model AgentSpan {
   @@index([executionId])
   @@index([agentId])
   @@index([result])
+}
+
+model GraphTask {
+  id               String    @id @default(cuid())
+  key              String
+  workflowId       String
+  executionId      String
+  agentId          String
+  stepId           String?   @unique
+  name             String
+  action           String    @default("run")
+  instruction      String?
+  input            String
+  dependencies     String    @default("[]")
+  status           String    @default("pending")
+  output           String?
+  toolsUsed        String    @default("[]")
+  risk             Int       @default(0)
+  approvalRequired Boolean   @default(false)
+  order            Int
+  startedAt        DateTime?
+  completedAt      DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  workflow  Workflow       @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  execution Execution      @relation(fields: [executionId], references: [id], onDelete: Cascade)
+  agent     Agent          @relation(fields: [agentId], references: [id])
+  step      ExecutionStep? @relation(fields: [stepId], references: [id], onDelete: SetNull)
+
+  @@unique([executionId, key])
+  @@index([executionId])
+  @@index([workflowId])
+  @@index([status])
 }

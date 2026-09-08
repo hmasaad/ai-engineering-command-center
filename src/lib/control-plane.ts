@@ -38,8 +38,8 @@ export const CONTROL_PLANE: ControlPlaneLayer[] = [
   {
     id: "tools",
     label: "Tool Execution",
-    href: "/security",
-    why: "github.patch, deploy.apply, logs.read, MCP. Every call is gateway-intercepted.",
+    href: "/security/tools",
+    why: "GitHub, CI, and observability only. Agent → Tool Request → Tool Gateway → Policy → Allow / Deny / Approval.",
     tone: "warn",
   },
   {

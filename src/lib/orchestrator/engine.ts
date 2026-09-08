@@ -8,9 +8,15 @@ import {
 } from "@/lib/observability";
 import { runSpecialist } from "@/lib/orchestrator/agents";
 import {
-  evaluatePhase,
+  requestTool,
   type GatewayDecision,
 } from "@/lib/orchestrator/gateway";
+import {
+  materializeTaskGraph,
+  mirrorGraphTask,
+  refreshGraphInput,
+} from "@/lib/orchestrator/graph";
+import { parseJson } from "@/lib/utils";
 
 async function addEvent(
   executionId: string,
@@ -77,8 +83,8 @@ export async function startExecution(taskId: string, workflowId: string) {
   if (workflow.steps.length === 0) {
     throw new Error("Workflow has no steps.");
   }
-  if (workflow.steps.some((step) => step.agent.status !== "active")) {
-    throw new Error("Workflow references an inactive agent.");
+  if (workflow.steps.some((step) => !step.agent.enabled)) {
+    throw new Error("Workflow references a disabled agent.");
   }
 
   const execution = await db.execution.create({
@@ -102,6 +108,16 @@ export async function startExecution(taskId: string, workflowId: string) {
     `Started “${workflow.name}” for task “${task.title}”.`,
   );
 
+  await materializeTaskGraph({
+    executionId: execution.id,
+    workflowId: workflow.id,
+    workflowName: workflow.name,
+    steps: workflow.steps,
+    task,
+    intent: task.title,
+  });
+  await addEvent(execution.id, "graph", `Task graph materialized for “${workflow.name}”.`);
+
   return runUntilPause(execution.id);
 }
 
@@ -117,6 +133,8 @@ function gatewayArtifact(decision: GatewayDecision) {
       ? "The specialist did not run. This tool request is denied."
       : "The specialist has not run yet. Approve to allow this tool request; reject to halt the execution.";
   return `# Agent Security Gateway
+
+Agent → Tool Request → Tool Gateway → Policy Engine → Allow / Deny / Approval
 
 **Phase:** ${decision.phase}
 **Tool request:** \`${decision.tool.name}\` / ${decision.tool.action}
@@ -195,6 +213,7 @@ async function haltDenied(input: {
     `Agent Security Gateway denied ${input.agentName} (${input.decision.tool.name}, risk ${input.decision.riskScore}).`,
     { verdict: input.decision.verdict, riskScore: input.decision.riskScore },
   );
+  await mirrorGraphTask(input.stepId);
   await rollupExecution(input.executionId);
 }
 
@@ -237,6 +256,7 @@ async function holdForGateway(input: {
     "gateway_hold",
     `Agent Security Gateway paused “${input.stepName}” for a human (risk ${input.decision.riskScore}).`,
   );
+  await mirrorGraphTask(input.stepId);
 }
 
 export async function runUntilPause(executionId: string) {
@@ -253,6 +273,7 @@ export async function runUntilPause(executionId: string) {
         include: { approvals: true, gatewayEvents: true },
         orderBy: { order: "asc" },
       },
+      graphTasks: { include: { agent: true }, orderBy: { order: "asc" } },
     },
   });
 
@@ -265,7 +286,49 @@ export async function runUntilPause(executionId: string) {
       output: step.output as string,
     }));
 
-  for (const workflowStep of execution.workflow.steps) {
+  const work = execution.graphTasks.length
+    ? execution.graphTasks.map((graphTask) => ({
+        graphTask,
+        workflowStep: {
+          id: execution.workflow.steps[graphTask.order]?.id ?? graphTask.id,
+          order: graphTask.order,
+          name: graphTask.name,
+          action: graphTask.action,
+          instruction: graphTask.instruction,
+          requiresApproval: graphTask.approvalRequired,
+          agentId: graphTask.agentId,
+          agent: graphTask.agent,
+        },
+      }))
+    : execution.workflow.steps.map((workflowStep) => ({
+        graphTask: null,
+        workflowStep,
+      }));
+
+  for (const { graphTask, workflowStep } of work) {
+    if (graphTask) {
+      const latest = await db.graphTask.findMany({ where: { executionId } });
+      const self = latest.find((row) => row.id === graphTask.id);
+      const deps = parseJson<string[]>(self?.dependencies ?? graphTask.dependencies, []);
+      const depRows = latest.filter((row) => deps.includes(row.id));
+      if (depRows.some((row) => ["awaiting_approval", "awaiting_gateway"].includes(row.status))) {
+        return { executionId, status: "awaiting_approval" as const };
+      }
+      if (depRows.some((row) => row.status === "denied" || row.status === "failed")) {
+        const halted = depRows.find((row) => row.status === "denied" || row.status === "failed");
+        return { executionId, status: (halted?.status ?? "failed") as "denied" | "failed" };
+      }
+      if (depRows.some((row) => row.status !== "completed")) {
+        return { executionId, status: execution.status };
+      }
+      await refreshGraphInput(
+        self ?? graphTask,
+        execution.task,
+        execution.task.title,
+        latest,
+      );
+    }
+
     const existing = execution.steps.find(
       (step) => step.order === workflowStep.order,
     );
@@ -305,6 +368,9 @@ export async function runUntilPause(executionId: string) {
         where: { id: step.id },
         data: { status: "running", startedAt: existing.startedAt ?? new Date() },
       });
+      await mirrorGraphTask(step.id);
+    } else if (!existing) {
+      await mirrorGraphTask(step.id);
     }
 
     await db.execution.update({
@@ -363,7 +429,7 @@ export async function runUntilPause(executionId: string) {
         `${workflowStep.agent.name} requested tools for “${workflowStep.name}”.`,
       );
 
-      const pre = await evaluatePhase({ ...runCtx, phase: "preflight" });
+      const pre = await requestTool({ ...runCtx, phase: "preflight" });
       tools = mergeTools(tools, pre.tools);
       riskScore = Math.max(riskScore, pre.decision.riskScore);
       const preEvent = await persistGatewayEvent({
@@ -375,7 +441,7 @@ export async function runUntilPause(executionId: string) {
       await addEvent(
         executionId,
         "gateway_eval",
-        `Security Gateway ${pre.decision.verdict} · ${pre.decision.tool.name} · risk ${pre.decision.riskScore}.`,
+        `Tool Gateway ${pre.decision.verdict} · ${pre.decision.tool.name} · risk ${pre.decision.riskScore}.`,
         {
           phase: "preflight",
           tools: pre.tools,
@@ -434,7 +500,7 @@ export async function runUntilPause(executionId: string) {
     );
 
     if (!postflightDone) {
-      const post = await evaluatePhase({
+      const post = await requestTool({
         ...runCtx,
         phase: "postflight",
         extraText: output,
@@ -450,7 +516,7 @@ export async function runUntilPause(executionId: string) {
       await addEvent(
         executionId,
         "gateway_eval",
-        `Security Gateway postflight ${post.decision.verdict} · ${post.decision.tool.name} · risk ${post.decision.riskScore}.`,
+        `Tool Gateway postflight ${post.decision.verdict} · ${post.decision.tool.name} · risk ${post.decision.riskScore}.`,
         {
           phase: "postflight",
           verdict: post.decision.verdict,
@@ -505,6 +571,7 @@ export async function runUntilPause(executionId: string) {
           output,
           risk: post.decision.riskScore,
         });
+        await mirrorGraphTask(step.id);
         return { executionId, status: "awaiting_approval" as const };
       }
     }
@@ -537,6 +604,7 @@ export async function runUntilPause(executionId: string) {
         `Human approval required after ${workflowStep.agent.name}.`,
       );
       await trace("awaiting_approval", { output });
+      await mirrorGraphTask(step.id);
       return { executionId, status: "awaiting_approval" as const };
     }
 
@@ -544,6 +612,7 @@ export async function runUntilPause(executionId: string) {
       where: { id: step.id },
       data: { status: "completed", output, completedAt: new Date() },
     });
+    await mirrorGraphTask(step.id);
     priorOutputs.push({ agent: workflowStep.agent.name, output });
     await addEvent(
       executionId,
@@ -633,6 +702,7 @@ export async function resolveApproval(
         : "Execution halted after rejection.",
     );
     await traceApprovalStep(approval.stepId, "failed");
+    await mirrorGraphTask(approval.stepId);
     return { executionId: approval.executionId, status: "failed" as const };
   }
 
@@ -659,6 +729,7 @@ export async function resolveApproval(
     where: { id: approval.stepId },
     data: { status: "completed", completedAt: new Date() },
   });
+  await mirrorGraphTask(approval.stepId);
   await addEvent(
     approval.executionId,
     "approved",

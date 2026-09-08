@@ -5,9 +5,9 @@ export default function NewAgentPage() {
   return (
     <div className="max-w-2xl">
       <PageHeader
-        kicker="Agents"
-        title="Register a specialist"
-        description="New agents join the same registry and can be dropped into workflows. They do not become separate products."
+        kicker="Agent Registry"
+        title="Register an agent"
+        description="Id, tools, permissions, model, and risk live on the record. The orchestrator loads it — you do not ship a new specialist in code."
         actions={<GhostLink href="/agents">Back</GhostLink>}
       />
       <AgentForm />

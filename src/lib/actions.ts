@@ -11,6 +11,7 @@ import { OPERATIONS_SERVICES } from "@/lib/operations";
 import { SECURITY_SERVICES } from "@/lib/security";
 import { startExecution, resolveApproval } from "@/lib/orchestrator/engine";
 import { uniqueSlug } from "@/lib/utils";
+import { registerAgent } from "@/lib/registry";
 
 function text(formData: FormData, key: string) {
   return String(formData.get(key) ?? "").trim();
@@ -119,46 +120,39 @@ export async function syncProjectGithub(projectId: string) {
 }
 
 export async function createAgent(formData: FormData) {
-  const name = text(formData, "name");
-  const role = text(formData, "role") || "architect";
-  const domain = text(formData, "domain") || "development";
-  const description = text(formData, "description");
-  const capabilities = text(formData, "capabilities");
-  const systemPrompt = text(formData, "systemPrompt");
-
-  if (!name || !description) {
-    return { error: "Name and description are required." };
-  }
-
-  const capabilityList = capabilities
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean);
-
-  const agent = await db.agent.create({
-    data: {
-      name,
-      slug: uniqueSlug(name),
-      role,
-      domain,
-      description,
-      capabilities: JSON.stringify(capabilityList),
-      systemPrompt:
-        systemPrompt ||
-        `You are the ${name} capability inside the AI Engineering Command Center.`,
-    },
+  const result = await registerAgent({
+    id: text(formData, "id"),
+    name: text(formData, "name"),
+    description: text(formData, "description"),
+    capabilities: text(formData, "capabilities"),
+    tools: text(formData, "tools"),
+    permissions: text(formData, "permissions"),
+    model: text(formData, "model"),
+    systemPrompt: text(formData, "systemPrompt"),
+    riskLevel: text(formData, "riskLevel"),
+    enabled: formData.get("enabled") === "on",
+    role: text(formData, "role"),
+    domain: text(formData, "domain"),
   });
 
+  if ("error" in result) {
+    return { error: result.error };
+  }
+
   revalidateAll();
-  redirect(`/agents/${agent.id}`);
+  redirect(`/agents/${result.agent.id}`);
 }
 
 export async function toggleAgentStatus(agentId: string) {
   const agent = await db.agent.findUnique({ where: { id: agentId } });
   if (!agent) return;
+  const enabled = !agent.enabled;
   await db.agent.update({
     where: { id: agentId },
-    data: { status: agent.status === "active" ? "inactive" : "active" },
+    data: {
+      enabled,
+      status: enabled ? "active" : "inactive",
+    },
   });
   revalidateAll();
 }
@@ -470,7 +464,7 @@ export async function runAutonomousIntent(formData: FormData) {
   const parsed = parseEngineeringIntent(intent);
   if (!parsed) {
     return {
-      error: "Could not expand that intent. Try “Prepare release 2.4.0”.",
+      error: "Could not expand that intent. Try “Review this PR and prepare a fix.”",
     };
   }
 
@@ -492,8 +486,10 @@ export async function runAutonomousIntent(formData: FormData) {
       projectId,
       title: parsed.title,
       description,
-      type: parsed.id === "hotfix" ? "incident" : "release",
+      type: parsed.id === "hotfix" ? "incident" : parsed.id === "pr_fix" ? "review" : "release",
       priority: parsed.id === "hotfix" ? "critical" : priority,
+      focusKind: parsed.focusKind ?? null,
+      focusRef: parsed.focusRef ?? null,
     },
   });
 

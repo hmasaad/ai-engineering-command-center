@@ -21,7 +21,7 @@ export default async function AutonomousPage() {
       <PageHeader
         kicker="Phase 6"
         title="Autonomous Engineering"
-        description="The developer states a goal. Command Center expands it into a workflow and assigns specialists — through the orchestrator, the security gateway, and a human gate before deploy."
+        description="The developer states a goal. The orchestrator expands it into a task graph — agents, dependencies, risk, and a human gate — then runs it through the registry and the security gateway."
         actions={<PrimaryLink href="/observability">Traces</PrimaryLink>}
       />
 
@@ -61,7 +61,7 @@ export default async function AutonomousPage() {
         <h2 className="mb-3 text-sm font-medium">Recent autonomous runs</h2>
         {recent.length === 0 ? (
           <p className="text-sm text-muted">
-            No expanded intents yet. Type “Prepare release 2.4.0” and run it.
+          No expanded intents yet. Type “Review this PR and prepare a fix.” and run it.
           </p>
         ) : (
           <ul className="space-y-2">

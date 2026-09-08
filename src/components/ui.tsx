@@ -18,6 +18,7 @@ const styles: Record<string, string> = {
   allowed: "bg-live/15 text-live",
   cancelled: "bg-muted/15 text-muted",
   inactive: "bg-muted/15 text-muted",
+  disabled: "bg-muted/15 text-muted",
   skipped: "bg-muted/15 text-muted",
   critical: "bg-danger/15 text-danger",
   high: "bg-warn/15 text-warn",
