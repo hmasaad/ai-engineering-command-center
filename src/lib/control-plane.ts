@@ -1,0 +1,105 @@
+export type ControlPlaneLayer = {
+  id: string;
+  label: string;
+  href: string;
+  why: string;
+  tone?: "live" | "warn" | "muted";
+};
+
+export const CONTROL_PLANE: ControlPlaneLayer[] = [
+  {
+    id: "orchestrator",
+    label: "Orchestrator",
+    href: "/history",
+    why: "Schedules the expanded workflow. It does not apply patches, deploys, or database writes.",
+    tone: "live",
+  },
+  {
+    id: "policy",
+    label: "Policy Engine",
+    href: "/security/permissions",
+    why: "Permissions and detectors run before a tool is invoked. Allow, deny, or hold for a human.",
+    tone: "warn",
+  },
+  {
+    id: "runtime",
+    label: "Agent Runtime",
+    href: "/agents",
+    why: "The bound specialist. Role comes from the registry, not from the prompt.",
+    tone: "live",
+  },
+  {
+    id: "workflow",
+    label: "Autonomous Workflow",
+    href: "/autonomous",
+    why: "The expanded playbook — release, production alert — not a single unconstrained agent.",
+    tone: "live",
+  },
+  {
+    id: "tools",
+    label: "Tool Execution",
+    href: "/security",
+    why: "github.patch, deploy.apply, logs.read, MCP. Every call is gateway-intercepted.",
+    tone: "warn",
+  },
+  {
+    id: "agents",
+    label: "Agent Execution",
+    href: "/history",
+    why: "Artifacts: plans, notes, reviews. A brief is not a live mutate until Execution.",
+    tone: "live",
+  },
+  {
+    id: "verification",
+    label: "Verification",
+    href: "/development",
+    why: "Tests, regression, and post-release checks. Evidence before anything is applied.",
+    tone: "live",
+  },
+  {
+    id: "observability",
+    label: "Observability",
+    href: "/observability",
+    why: "Spans for input, tools, tokens, cost, duration, and risk. You cannot approve what you cannot see.",
+    tone: "live",
+  },
+  {
+    id: "risk",
+    label: "Risk / Approval",
+    href: "/approvals",
+    why: "Human gate. Code changes, deploys, database access, and incident apply wait here.",
+    tone: "warn",
+  },
+  {
+    id: "execution",
+    label: "Execution",
+    href: "/history",
+    why: "Side effects only after policy, verification, observability, and a human: deploy, rollback, patch.",
+    tone: "live",
+  },
+];
+
+export const CONTROL_PLANE_ASCII = `                  ORCHESTRATOR
+                       │
+                       ↓
+                POLICY ENGINE
+                       │
+                       ↓
+                 AGENT RUNTIME
+                       │
+                       ↓
+              AUTONOMOUS WORKFLOW
+                       │
+             ┌─────────┴─────────┐
+             ↓                   ↓
+       TOOL EXECUTION        AGENT EXECUTION
+             │                   │
+             └─────────┬─────────┘
+                       ↓
+                 VERIFICATION
+                       ↓
+                 OBSERVABILITY
+                       ↓
+              RISK / APPROVAL
+                       ↓
+                  EXECUTION`;

@@ -1,0 +1,262 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Project {
+  id            String   @id @default(cuid())
+  name          String
+  slug          String   @unique
+  description   String?
+  githubOwner   String?
+  githubRepo    String?
+  githubUrl     String?
+  defaultBranch String?
+  githubMeta    String?
+  lastSyncedAt  DateTime?
+  status        String   @default("active")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  tasks      Task[]
+  workflows  Workflow[]
+  executions Execution[]
+}
+
+model Agent {
+  id           String   @id @default(cuid())
+  slug         String   @unique
+  name         String
+  role         String
+  domain       String   @default("development")
+  description  String
+  capabilities String
+  systemPrompt String
+  status       String   @default("active")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  workflowSteps  WorkflowStep[]
+  executionSteps ExecutionStep[]
+  gatewayEvents  GatewayEvent[]
+  spans          AgentSpan[]
+}
+
+model Task {
+  id          String   @id @default(cuid())
+  projectId   String
+  title       String
+  description String
+  type        String   @default("feature")
+  priority    String   @default("medium")
+  status      String   @default("open")
+  focusKind   String?
+  focusRef    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  project    Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  executions Execution[]
+
+  @@index([projectId])
+  @@index([status])
+}
+
+model Workflow {
+  id          String   @id @default(cuid())
+  projectId   String?
+  name        String
+  description String
+  isTemplate  Boolean  @default(true)
+  domain      String   @default("development")
+  kind        String   @default("playbook")
+  serviceSlug String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  project    Project?        @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  steps      WorkflowStep[]
+  executions Execution[]
+}
+
+model WorkflowStep {
+  id               String  @id @default(cuid())
+  workflowId       String
+  agentId          String
+  order            Int
+  name             String
+  action           String
+  requiresApproval Boolean @default(false)
+  instruction      String?
+
+  workflow Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  agent    Agent    @relation(fields: [agentId], references: [id])
+
+  @@unique([workflowId, order])
+}
+
+model Execution {
+  id          String    @id @default(cuid())
+  projectId   String
+  taskId      String
+  workflowId  String
+  status      String    @default("pending")
+  currentStep Int       @default(0)
+  startedAt   DateTime?
+  completedAt DateTime?
+  durationMs  Int?
+  tokenTotal  Int       @default(0)
+  costUsd     Float     @default(0)
+  maxRisk     Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  project   Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  task      Task             @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  workflow  Workflow         @relation(fields: [workflowId], references: [id])
+  steps          ExecutionStep[]
+  approvals      Approval[]
+  events         ExecutionEvent[]
+  gatewayEvents  GatewayEvent[]
+  spans          AgentSpan[]
+
+  @@index([status])
+  @@index([projectId])
+}
+
+model ExecutionStep {
+  id             String    @id @default(cuid())
+  executionId    String
+  workflowStepId String?
+  agentId        String
+  order          Int
+  name           String
+  status         String    @default("pending")
+  output         String?
+  startedAt      DateTime?
+  completedAt    DateTime?
+
+  execution     Execution      @relation(fields: [executionId], references: [id], onDelete: Cascade)
+  agent         Agent          @relation(fields: [agentId], references: [id])
+  approvals     Approval[]
+  gatewayEvents GatewayEvent[]
+  span          AgentSpan?
+}
+
+model Approval {
+  id              String    @id @default(cuid())
+  executionId     String
+  stepId          String
+  gatewayEventId  String?
+  kind            String    @default("workflow")
+  status          String    @default("pending")
+  summary         String
+  comment         String?
+  requestedAt     DateTime  @default(now())
+  resolvedAt      DateTime?
+  resolvedBy      String?
+
+  execution    Execution      @relation(fields: [executionId], references: [id], onDelete: Cascade)
+  step         ExecutionStep  @relation(fields: [stepId], references: [id], onDelete: Cascade)
+  gatewayEvent GatewayEvent?  @relation(fields: [gatewayEventId], references: [id], onDelete: SetNull)
+
+  @@index([status])
+}
+
+model GatewayEvent {
+  id          String    @id @default(cuid())
+  executionId String
+  stepId      String?
+  agentId     String
+  phase       String
+  toolName    String
+  toolAction  String
+  arguments   String?
+  riskScore   Int
+  verdict     String
+  status      String
+  reasons     String
+  detectors   String
+  summary     String
+  createdAt   DateTime  @default(now())
+  resolvedAt  DateTime?
+  resolvedBy  String?
+
+  execution Execution      @relation(fields: [executionId], references: [id], onDelete: Cascade)
+  step      ExecutionStep? @relation(fields: [stepId], references: [id], onDelete: SetNull)
+  agent     Agent          @relation(fields: [agentId], references: [id])
+  approvals Approval[]
+
+  @@index([executionId])
+  @@index([verdict])
+  @@index([status])
+}
+
+model ToolPermission {
+  id        String   @id @default(cuid())
+  agentSlug String   @default("*")
+  toolName  String
+  mode      String
+  note      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([agentSlug, toolName])
+}
+
+model SecurityPolicy {
+  id          String  @id @default(cuid())
+  slug        String  @unique
+  name        String
+  detector    String
+  enabled     Boolean @default(true)
+  weight      Int     @default(20)
+  description String
+}
+
+model ExecutionEvent {
+  id          String   @id @default(cuid())
+  executionId String
+  type        String
+  message     String
+  payload     String?
+  createdAt   DateTime @default(now())
+
+  execution Execution @relation(fields: [executionId], references: [id], onDelete: Cascade)
+
+  @@index([executionId])
+  @@index([createdAt])
+}
+
+model AgentSpan {
+  id          String   @id @default(cuid())
+  executionId String
+  stepId      String   @unique
+  agentId     String
+  order       Int
+  input       String
+  context     String
+  tools       String
+  output      String?
+  tokenInput  Int      @default(0)
+  tokenOutput Int      @default(0)
+  tokenTotal  Int      @default(0)
+  costUsd     Float    @default(0)
+  durationMs  Int      @default(0)
+  riskScore   Int      @default(0)
+  result      String   @default("running")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  execution Execution     @relation(fields: [executionId], references: [id], onDelete: Cascade)
+  step      ExecutionStep @relation(fields: [stepId], references: [id], onDelete: Cascade)
+  agent     Agent         @relation(fields: [agentId], references: [id])
+
+  @@index([executionId])
+  @@index([agentId])
+  @@index([result])
+}
