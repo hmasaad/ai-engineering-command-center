@@ -100,6 +100,12 @@ export const STATUS_LABELS: Record<string, string> = {
   allowed: "Allowed",
   recommended: "Review recommended",
   mandatory: "Mandatory approval",
+  investigating: "Investigating",
+  remediating: "Remediating",
+  verifying: "Verifying",
+  pass: "Pass",
+  warn: "Warn",
+  fail: "Fail",
 };
 
 export type GithubCommit = {

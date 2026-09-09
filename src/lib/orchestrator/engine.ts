@@ -6,11 +6,17 @@ import {
   toolsFromGatewayEvents,
   type ToolTrace,
 } from "@/lib/observability";
-import { runSpecialist } from "@/lib/orchestrator/agents";
+import type { GatewayDecision } from "@/lib/orchestrator/gateway";
 import {
-  requestTool,
-  type GatewayDecision,
-} from "@/lib/orchestrator/gateway";
+  executeBoundAgent,
+  interceptToolCall,
+  routeBoundAgent,
+} from "@/lib/orchestrator/runtime";
+import { persistWorkflowState } from "@/lib/agent-state";
+import {
+  evalEventMessage,
+  evaluateCompletedStep,
+} from "@/lib/agent-evals";
 import {
   materializeTaskGraph,
   mirrorGraphTask,
@@ -72,6 +78,12 @@ async function traceApprovalStep(stepId: string, result: string) {
     },
   });
   if (!step) return;
+  const route = routeBoundAgent({
+    agent: step.agent,
+    action: "run",
+    stepName: step.name,
+    taskTitle: step.execution.task.title,
+  });
   await recordStepSpan({
     executionId: step.executionId,
     stepId: step.id,
@@ -89,6 +101,8 @@ async function traceApprovalStep(stepId: string, result: string) {
     ),
     result,
     startedAt: step.startedAt,
+    model: route.model,
+    lane: route.lane,
   });
 }
 
@@ -145,6 +159,7 @@ export async function startExecution(taskId: string, workflowId: string) {
     intent: task.title,
   });
   await addEvent(execution.id, "graph", `Task graph materialized for “${workflow.name}”.`);
+  await persistWorkflowState(execution.id);
 
   return runUntilPause(execution.id);
 }
@@ -300,7 +315,21 @@ async function holdForGateway(input: {
   await mirrorGraphTask(input.stepId);
 }
 
-export async function runUntilPause(executionId: string) {
+export async function runUntilPause(executionId: string): Promise<{
+  executionId: string;
+  status: string;
+}> {
+  try {
+    return await driveUntilPause(executionId);
+  } finally {
+    await persistWorkflowState(executionId);
+  }
+}
+
+async function driveUntilPause(executionId: string): Promise<{
+  executionId: string;
+  status: string;
+}> {
   const execution = await db.execution.findUnique({
     where: { id: executionId },
     include: {
@@ -432,6 +461,14 @@ export async function runUntilPause(executionId: string) {
       0,
     );
 
+    const route = routeBoundAgent({
+      agent: workflowStep.agent,
+      action: workflowStep.action,
+      instruction: workflowStep.instruction,
+      stepName: workflowStep.name,
+      taskTitle: execution.task.title,
+    });
+
     const trace = (
       result: string,
       extra?: { output?: string | null; risk?: number },
@@ -451,9 +488,19 @@ export async function runUntilPause(executionId: string) {
         riskScore: extra?.risk ?? riskScore,
         result,
         startedAt,
+        model: route.model,
+        lane: route.lane,
       });
 
     await trace("running");
+    if (!existing) {
+      await addEvent(
+        executionId,
+        "model_route",
+        `${workflowStep.agent.name} → ${route.model} (${route.lane}). ${route.reason}`,
+        { model: route.model, lane: route.lane, reason: route.reason },
+      );
+    }
 
     const preflightDone = (existing?.gatewayEvents || []).some(
       (event) =>
@@ -468,7 +515,7 @@ export async function runUntilPause(executionId: string) {
         `${workflowStep.agent.name} requested tools for “${workflowStep.name}”.`,
       );
 
-      const pre = await requestTool({ ...runCtx, phase: "preflight" });
+      const pre = await interceptToolCall({ ...runCtx, phase: "preflight" });
       tools = mergeTools(tools, pre.tools);
       riskScore = Math.max(riskScore, pre.decision.riskScore);
       const preEvent = await persistGatewayEvent({
@@ -537,12 +584,52 @@ export async function runUntilPause(executionId: string) {
     const alreadyRan = Boolean(
       existing?.output && !existing.output.startsWith("# Agent Security Gateway"),
     );
-    const output = alreadyRan
-      ? (existing?.output as string)
-      : await runSpecialist({
+    let output: string;
+    if (alreadyRan) {
+      output = existing?.output as string;
+    } else {
+      try {
+        const bound = await executeBoundAgent({
           ...runCtx,
           priorOutputs,
+          executionId,
+          stepName: workflowStep.name,
         });
+        output = bound.output;
+        if (bound.retried) {
+          await addEvent(
+            executionId,
+            "agent_retry",
+            `${workflowStep.agent.name} retried (${bound.attempts} attempts). ${bound.retryReason || ""}`.trim(),
+          );
+        }
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Agent runtime failed.";
+        await db.executionStep.update({
+          where: { id: step.id },
+          data: { status: "failed", output: message, completedAt: new Date() },
+        });
+        await db.execution.update({
+          where: { id: executionId },
+          data: { status: "failed", completedAt: new Date() },
+        });
+        await db.task.update({
+          where: { id: execution.taskId },
+          data: { status: "failed" },
+        });
+        await addEvent(executionId, "agent_failed", message);
+        await addEvent(
+          executionId,
+          "failed",
+          `${workflowStep.agent.name} failed inside the Agent Runtime.`,
+        );
+        await trace("failed", { output: message });
+        await mirrorGraphTask(step.id);
+        await rollupExecution(executionId);
+        return { executionId, status: "failed" as const };
+      }
+    }
 
     const postflightDone = (existing?.gatewayEvents || []).some(
       (event) =>
@@ -551,7 +638,7 @@ export async function runUntilPause(executionId: string) {
     );
 
     if (!postflightDone) {
-      const post = await requestTool({
+      const post = await interceptToolCall({
         ...runCtx,
         phase: "postflight",
         extraText: output,
@@ -686,6 +773,24 @@ export async function runUntilPause(executionId: string) {
       "step_completed",
       `${workflowStep.agent.name} completed “${workflowStep.name}”.`,
     );
+    const evaluation = evaluateCompletedStep({
+      role: workflowStep.agent.role,
+      name: workflowStep.name,
+      action: workflowStep.action,
+      output,
+      taskTitle: execution.task.title,
+      taskType: execution.task.type,
+      taskPriority: execution.task.priority,
+      priorOutputs,
+    });
+    if (evaluation) {
+      await addEvent(
+        executionId,
+        "agent_eval",
+        evalEventMessage(workflowStep.agent.name, evaluation),
+        evaluation,
+      );
+    }
     await trace("completed", { output });
   }
 
@@ -787,6 +892,7 @@ export async function resolveApproval(
     );
     await traceApprovalStep(approval.stepId, "failed");
     await mirrorGraphTask(approval.stepId);
+    await persistWorkflowState(approval.executionId);
     return { executionId: approval.executionId, status: "failed" as const };
   }
 

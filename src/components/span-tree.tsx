@@ -7,6 +7,7 @@ import {
 } from "@/lib/debug-log";
 import type { ToolTrace } from "@/lib/observability";
 import { formatDuration, formatUsd } from "@/lib/observability";
+import { parseRoutedModel } from "@/lib/model-router";
 import { parseJson, truncate } from "@/lib/utils";
 
 type GatewayTrace = {
@@ -107,10 +108,15 @@ export function SpanTree({
 
 function AgentBranch({ span, expanded }: { span: SpanNode; expanded: boolean }) {
   const tools = toolRows(span);
+  const routed = parseRoutedModel(span.context);
+  const model =
+    routed
+      ? `${routed.model} · ${routed.lane}`
+      : span.agent.model || "command-center.v1";
   const rows: Array<[string, string]> = [
     ["Input", truncate(span.input, expanded ? 1200 : 160)],
     ["Context", truncate(span.context, expanded ? 800 : 160)],
-    ["Model", span.agent.model || "command-center.v1"],
+    ["Model", model],
     ["Prompt", truncate(span.agent.systemPrompt || "—", expanded ? 800 : 140)],
     ["Output", span.output ? truncate(span.output, expanded ? 1600 : 180) : "—"],
     [

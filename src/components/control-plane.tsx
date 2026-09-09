@@ -23,8 +23,8 @@ export function ControlPlaneLayers({
   const rest = CONTROL_PLANE.filter(
     (layer) => layer.id !== "tools" && layer.id !== "agents",
   );
-  const beforeSplit = rest.slice(0, 4);
-  const afterSplit = rest.slice(4);
+  const beforeSplit = rest.slice(0, 6);
+  const afterSplit = rest.slice(6);
 
   return (
     <div className="flex flex-col items-center gap-2">

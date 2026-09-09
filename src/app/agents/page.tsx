@@ -1,6 +1,7 @@
 import Link from "next/link";
 import {
   EmptyState,
+  GhostLink,
   PageHeader,
   PrimaryLink,
   StatusBadge,
@@ -20,8 +21,15 @@ export default async function AgentsPage() {
       <PageHeader
         kicker="Orchestrator MVP"
         title="Agent Registry"
-        description="Agents are records, not code. Register a specialist with tools, permissions, model, and risk — then drop it into a workflow. The orchestrator loads this table at runtime."
-        actions={<PrimaryLink href="/agents/new">Register agent</PrimaryLink>}
+        description="Agents are records, not code. Register a specialist with tools, permissions, a default model, and risk — then drop it into a workflow. The Agent Runtime loads this table; the Model Router picks the live model for the task."
+        actions={
+          <>
+            <GhostLink href="/runtime">Agent Runtime</GhostLink>
+            <GhostLink href="/routing">Model Routing</GhostLink>
+            <GhostLink href="/evals">Agent Evals</GhostLink>
+            <PrimaryLink href="/agents/new">Register agent</PrimaryLink>
+          </>
+        }
       />
 
       <div className="overflow-x-auto rounded-xl border border-live/35 bg-[#070d14] p-5 shadow-[0_0_48px_rgba(61,220,151,0.08)]">

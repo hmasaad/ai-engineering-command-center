@@ -13,16 +13,38 @@ import {
   FeedbackLoopLive,
   FeedbackLoopWalkAscii,
 } from "@/components/feedback-loop";
+import {
+  AgentRuntimeAscii,
+  AgentRuntimeWalkAscii,
+} from "@/components/agent-runtime";
+import {
+  AgentStateAscii,
+  AgentStateLive,
+} from "@/components/agent-state";
+import {
+  ModelRouterAscii,
+  ModelRouterCompact,
+} from "@/components/model-router";
+import {
+  AgentEvalLive,
+  AgentEvalsAscii,
+} from "@/components/agent-evals";
 import { getCommandCenterBoard } from "@/lib/observability";
 import { getCommandCenterData } from "@/lib/queries";
 import { getFeedbackLoopLive } from "@/lib/feedback-loop";
+import { getLiveWorkflowState } from "@/lib/agent-state";
+import { getModelRouteLedger } from "@/lib/model-router";
+import { getAgentEvalBoard } from "@/lib/agent-evals";
 import { formatRelative } from "@/lib/utils";
 
 export default async function CommandCenterPage() {
-  const [data, board, loop] = await Promise.all([
+  const [data, board, loop, routing, evals, state] = await Promise.all([
     getCommandCenterData(),
     getCommandCenterBoard(),
     getFeedbackLoopLive(),
+    getModelRouteLedger(),
+    getAgentEvalBoard(),
+    getLiveWorkflowState(),
   ]);
 
   return (
@@ -60,6 +82,57 @@ export default async function CommandCenterPage() {
             />
           ) : null}
         </div>
+      </div>
+
+      <div className="mt-6 grid gap-3 lg:grid-cols-2">
+        <AgentRuntimeAscii />
+        <div className="space-y-3">
+          <AgentRuntimeWalkAscii />
+          <Link href="/runtime" className="text-xs text-muted hover:text-live">
+            Open Agent Runtime
+          </Link>
+        </div>
+      </div>
+
+      <div className="mt-6 grid gap-3 lg:grid-cols-2">
+        <ModelRouterAscii />
+        {routing ? (
+          <ModelRouterCompact ledger={routing} />
+        ) : (
+          <p className="self-center text-sm text-muted">
+            Run Production alert to see the Model Router split fast, reasoning, and specialized lanes.
+          </p>
+        )}
+      </div>
+
+      <div className="mt-6 grid gap-3 lg:grid-cols-2">
+        <AgentEvalsAscii />
+        {evals.incident ? (
+          <AgentEvalLive card={evals.incident} compact />
+        ) : evals.prReviewer ? (
+          <AgentEvalLive card={evals.prReviewer} compact />
+        ) : (
+          <p className="self-center text-sm text-muted">
+            Run PR Reviewer or Production alert to score whether the agent is actually good.
+          </p>
+        )}
+      </div>
+
+      <div className="mt-6 grid gap-3 lg:grid-cols-2">
+        <AgentStateAscii />
+        {state ? (
+          <AgentStateLive
+            title={state.title}
+            status={state.document.status}
+            href={state.href}
+            historyHref={state.historyHref}
+            compact={state.compact}
+          />
+        ) : (
+          <p className="self-center text-sm text-muted">
+            Run a workflow to persist Agent State.
+          </p>
+        )}
       </div>
 
       <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">

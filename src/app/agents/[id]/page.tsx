@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ToggleAgentButton } from "@/components/toggle-agent-button";
+import { AgentEvalLive, AgentEvalSuiteAscii } from "@/components/agent-evals";
 import { GhostLink, PageHeader, StatusBadge } from "@/components/ui";
+import { getSuiteEvalLive, suiteForRole } from "@/lib/agent-evals";
 import { getRegistryAgent, specToPublicJson } from "@/lib/registry";
 
 export default async function AgentDetailPage({
@@ -14,6 +16,8 @@ export default async function AgentDetailPage({
   if (!agent) notFound();
   const spec = agent.spec;
   const json = specToPublicJson(spec);
+  const suite = suiteForRole(spec.role);
+  const evalLive = await getSuiteEvalLive(suite.id);
 
   return (
     <div className="max-w-3xl">
@@ -24,6 +28,9 @@ export default async function AgentDetailPage({
         actions={
           <>
             <GhostLink href="/agents">All agents</GhostLink>
+            <GhostLink href="/runtime">Runtime</GhostLink>
+            <GhostLink href="/routing">Routing</GhostLink>
+            <GhostLink href={`/evals/${suite.id}`}>Evals</GhostLink>
             <ToggleAgentButton agentId={agent.id} enabled={spec.enabled} />
           </>
         }
@@ -45,11 +52,22 @@ export default async function AgentDetailPage({
       <section className="rounded-xl border border-line bg-panel/80 p-5">
         <h2 className="text-sm font-medium">Registry record</h2>
         <p className="mt-1 text-xs text-muted">
-          The orchestrator and policy engine read this record. Adding an agent does not require a code change.
+          The orchestrator and Agent Runtime read this record. The registry model is a default. The Model Router picks fast, reasoning, or specialized when the step actually runs.
         </p>
         <pre className="mt-4 overflow-x-auto rounded-lg border border-line bg-[#070d14] p-4 font-mono text-[12px] leading-6 text-live">
           {JSON.stringify(json, null, 2)}
         </pre>
+      </section>
+
+      <section className="mt-6 grid gap-3 lg:grid-cols-2">
+        <AgentEvalSuiteAscii suite={suite} />
+        {evalLive ? (
+          <AgentEvalLive card={evalLive} compact />
+        ) : (
+          <p className="self-center text-sm text-muted">
+            No scored run yet. The next bound run for this specialist is evaluated automatically.
+          </p>
+        )}
       </section>
 
       <section className="mt-6 rounded-xl border border-line bg-panel/80 p-5">

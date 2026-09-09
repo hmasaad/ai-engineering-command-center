@@ -15,6 +15,30 @@ import {
   AutonomyUnsafeAscii,
 } from "@/components/autonomous-execution";
 import {
+  AgentRuntimeAscii,
+  AgentRuntimeDuties,
+  AgentRuntimeLive,
+  AgentRuntimeWalkAscii,
+} from "@/components/agent-runtime";
+import {
+  AgentStateAscii,
+  AgentStateExampleJson,
+  AgentStateLive,
+  AgentStateUnsafeAscii,
+} from "@/components/agent-state";
+import {
+  ModelRouterAscii,
+  ModelRouterExamples,
+  ModelRouterLive,
+  ModelRouterUnsafeAscii,
+} from "@/components/model-router";
+import {
+  AgentEvalFeaturedSuites,
+  AgentEvalLive,
+  AgentEvalsAscii,
+  AgentEvalsUnsafeAscii,
+} from "@/components/agent-evals";
+import {
   ObservabilityAscii,
   ObservabilityCaptureTree,
   ObservabilityExampleLog,
@@ -28,23 +52,33 @@ import { TaskGraphAscii } from "@/components/task-graph";
 import { GhostLink, PageHeader } from "@/components/ui";
 import { CONTROL_PLANE } from "@/lib/control-plane";
 import { getFeedbackLoopLive } from "@/lib/feedback-loop";
+import { getRuntimeLive } from "@/lib/agent-runtime";
+import { getLiveWorkflowState } from "@/lib/agent-state";
+import { getModelRouteLedger } from "@/lib/model-router";
+import { getAgentEvalBoard } from "@/lib/agent-evals";
 
 export default async function ArchitecturePage() {
-  const loop = await getFeedbackLoopLive();
+  const [loop, runtime, routing, evals, state] = await Promise.all([
+    getFeedbackLoopLive(),
+    getRuntimeLive(),
+    getModelRouteLedger(),
+    getAgentEvalBoard(),
+    getLiveWorkflowState(),
+  ]);
   const tools = CONTROL_PLANE.find((layer) => layer.id === "tools");
   const agents = CONTROL_PLANE.find((layer) => layer.id === "agents");
   const linear = CONTROL_PLANE.filter(
     (layer) => layer.id !== "tools" && layer.id !== "agents",
   );
-  const before = linear.slice(0, 4);
-  const after = linear.slice(4);
+  const before = linear.slice(0, 6);
+  const after = linear.slice(6);
 
   return (
     <div>
       <PageHeader
         kicker="Control plane"
         title="Architecture"
-        description="These are not four separate features. Observability, the Security Gateway, incident response, and agent execution form a feedback loop around the orchestrator."
+        description="The orchestrator schedules. The Agent Runtime runs each specialist. The Model Router picks the model. Agent Evals ask whether that specialist is actually good."
         actions={<GhostLink href="/">Command Center</GhostLink>}
       />
 
@@ -129,6 +163,106 @@ export default async function ArchitecturePage() {
           ) : (
             <p className="self-center text-sm text-muted">
               Run Production alert to see this loop on a live execution.
+            </p>
+          )}
+        </div>
+      </div>
+
+      <div className="mt-8">
+        <AgentRuntimeAscii />
+        <p className="mt-3 max-w-3xl text-xs text-muted">
+          The orchestrator does not run the specialist. The Agent Runtime loads identity, context, memory, and tools, the Model Router picks the lane, then every tool call still hits the Security Gateway.
+        </p>
+        <div className="mt-6">
+          <AgentRuntimeDuties />
+        </div>
+        <div className="mt-6 grid gap-3 lg:grid-cols-2">
+          <AgentRuntimeWalkAscii />
+          <p className="self-center text-sm text-muted">
+            Developer Agent is a registry record. The runtime loads it, binds context and memory, the Model Router picks the lane, grants declared tools, executes, and intercepts every tool call into the Security Gateway.
+          </p>
+        </div>
+        <div className="mt-6">
+          {runtime ? (
+            <AgentRuntimeLive session={runtime} />
+          ) : (
+            <p className="text-sm text-muted">
+              Run a Developer step to see a live bound session.
+            </p>
+          )}
+        </div>
+      </div>
+
+      <div className="mt-8">
+        <div className="grid gap-3 lg:grid-cols-2">
+          <ModelRouterAscii />
+          <ModelRouterUnsafeAscii />
+        </div>
+        <p className="mt-3 max-w-3xl text-xs text-muted">
+          Once multiple agents exist, do not make every agent use the same model. Format and summaries stay cheap. Architecture, RCA, and security spend the reasoning budget.
+        </p>
+        <div className="mt-6 grid gap-3 lg:grid-cols-2">
+          <ModelRouterExamples />
+          {routing ? (
+            <ModelRouterLive ledger={routing} />
+          ) : (
+            <p className="self-center text-sm text-muted">
+              Run Production alert to see fast, reasoning, and specialized lanes on one workflow.
+            </p>
+          )}
+        </div>
+      </div>
+
+      <div className="mt-8">
+        <div className="grid gap-3 lg:grid-cols-2">
+          <AgentEvalsAscii />
+          <AgentEvalsUnsafeAscii />
+        </div>
+        <p className="mt-3 max-w-3xl text-xs text-muted">
+          Observability records the run. Evals score the agent. A prompt, model, tool, or orchestration change is measured on the next bound run — not shipped because the demo looked fine.
+        </p>
+        <div className="mt-6">
+          <AgentEvalFeaturedSuites />
+        </div>
+        <div className="mt-6 grid gap-3 lg:grid-cols-2">
+          {evals.prReviewer ? (
+            <AgentEvalLive card={evals.prReviewer} compact />
+          ) : (
+            <p className="self-center text-sm text-muted">
+              Run PR Reviewer to score bug detection, security, and recommendation quality.
+            </p>
+          )}
+          {evals.incident ? (
+            <AgentEvalLive card={evals.incident} compact />
+          ) : (
+            <p className="self-center text-sm text-muted">
+              Run Production alert to score RCA, evidence, hallucination, recovery, and escalation.
+            </p>
+          )}
+        </div>
+      </div>
+
+      <div className="mt-8">
+        <div className="grid gap-3 lg:grid-cols-2">
+          <AgentStateAscii />
+          <AgentStateUnsafeAscii />
+        </div>
+        <p className="mt-3 max-w-3xl text-xs text-muted">
+          Agents are not stateless chatbots. Every workflow keeps a durable document: goal, plan, tasks, current task, agent states, tool results, decisions, errors, approvals, final result.
+        </p>
+        <div className="mt-6 grid gap-3 lg:grid-cols-2">
+          <AgentStateExampleJson />
+          {state ? (
+            <AgentStateLive
+              title={state.title}
+              status={state.document.status}
+              href={state.href}
+              historyHref={state.historyHref}
+              compact={state.compact}
+            />
+          ) : (
+            <p className="self-center text-sm text-muted">
+              Run Production alert to persist a live workflow state document.
             </p>
           )}
         </div>

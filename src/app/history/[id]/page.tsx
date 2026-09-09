@@ -47,6 +47,7 @@ export default async function ExecutionDetailPage({
         description={`${execution.project.name} · ${execution.workflow.name}`}
         actions={
           <>
+            <GhostLink href={`/state/${execution.id}`}>State</GhostLink>
             <GhostLink href={`/observability/${execution.id}`}>Trace</GhostLink>
             <GhostLink href="/history">All history</GhostLink>
           </>

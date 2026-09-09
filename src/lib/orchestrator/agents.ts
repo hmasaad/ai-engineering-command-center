@@ -19,6 +19,11 @@ import { extractReleaseVersion } from "@/lib/autonomous";
 import { toAgentRecord } from "@/lib/registry";
 import { parseJson, truncate } from "@/lib/utils";
 
+export type AgentMemoryItem = {
+  source: string;
+  excerpt: string;
+};
+
 export type RunContext = {
   agent: Agent;
   action: string;
@@ -26,6 +31,8 @@ export type RunContext = {
   project: Project;
   task: Task & { focusKind?: string | null; focusRef?: string | null };
   priorOutputs: Array<{ agent: string; output: string }>;
+  memory?: AgentMemoryItem[];
+  model?: string | null;
   github: GithubMeta | null;
   pullRequest?: PullRequestDetail | null;
   issue?: IssueDetail | null;
@@ -39,6 +46,14 @@ function header(ctx: RunContext, title: string) {
   const extras = ctx.instruction
     ? `\nOperator instruction: ${ctx.instruction}`
     : "";
+  const memory = (ctx.memory || [])
+    .slice(0, 4)
+    .map(
+      (item) =>
+        `- **${item.source}** — ${truncate(item.excerpt.replace(/^# .+\n/, ""), 140)}`,
+    )
+    .join("\n");
+  const memoryBlock = memory ? `\n**Memory:**\n${memory}` : "";
   const focus =
     ctx.task.focusKind && ctx.task.focusRef
       ? `\n**Focus:** ${ctx.task.focusKind} ${ctx.task.focusRef}`
@@ -57,11 +72,12 @@ function header(ctx: RunContext, title: string) {
 
 **Service:** ${ctx.agent.name} · ${lane}
 **Action:** ${ctx.action}
+**Model:** \`${ctx.model || ctx.agent.model}\`
 **Project:** ${ctx.project.name} · ${repo}@${branch}
 **Task:** ${ctx.task.title}
 **Type / priority:** ${ctx.task.type} / ${ctx.task.priority}${focus}
 
-${ctx.task.description.trim()}${extras}
+${ctx.task.description.trim()}${extras}${memoryBlock}
 `;
 }
 
@@ -1151,7 +1167,7 @@ function genericAgent(ctx: RunContext) {
 ## Registry
 This run is bound to **${spec.name}** (\`${spec.id}\`) from the Agent Registry. Role and tools come from the record, not from the prompt.
 
-- **Model:** \`${spec.model}\`
+- **Model:** \`${ctx.model || spec.model}\`
 - **Risk:** ${spec.riskLevel}
 - **Enabled:** ${spec.enabled ? "yes" : "no"}
 
@@ -1257,10 +1273,13 @@ export async function runSpecialist(input: {
   project: Project;
   task: Task & { focusKind?: string | null; focusRef?: string | null };
   priorOutputs: Array<{ agent: string; output: string }>;
+  memory?: AgentMemoryItem[];
+  model?: string | null;
 }) {
   const focus = await resolveFocus(input.project, input.task);
   const ctx: RunContext = {
     ...input,
+    memory: input.memory || [],
     github: focus.github,
     pullRequest: focus.pullRequest,
     issue: focus.issue,

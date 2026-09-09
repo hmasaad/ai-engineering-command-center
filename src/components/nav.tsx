@@ -17,10 +17,14 @@ const items = [
   { href: "/security/gateway", label: "Gateway", group: "intel" },
   { href: "/security/tools", label: "Tool Layer", group: "intel" },
   { href: "/autonomous", label: "Autonomous", group: "intel" },
+  { href: "/runtime", label: "Runtime", group: "run" },
+  { href: "/routing", label: "Routing", group: "run" },
+  { href: "/state", label: "State", group: "run" },
   { href: "/workflows", label: "Workflows", group: "run" },
   { href: "/approvals", label: "HITL", group: "run" },
   { href: "/history", label: "History", group: "run" },
   { href: "/observability", label: "Observability", group: "telemetry" },
+  { href: "/evals", label: "Evals", group: "telemetry" },
 ] as const;
 
 function isActive(pathname: string, href: string) {

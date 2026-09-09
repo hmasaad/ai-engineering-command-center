@@ -5,13 +5,21 @@ import {
   toActionEvent,
   type ActionEvent,
 } from "@/lib/action-event";
+import {
+  MODEL_LANES,
+  laneForModel,
+  routeModel,
+  routedModelLine,
+  type ModelLane,
+  type ModelRoute,
+} from "@/lib/model-router";
 import type { ProposedTool } from "@/lib/orchestrator/gateway";
 import { parseJson, truncate } from "@/lib/utils";
 
-/** Estimated rates: specialists emit artifacts, they are not live model calls yet. */
+/** Fallback rates when a span has no routed lane (legacy command-center.v1). */
 export const TOKEN_RATES = {
-  inputPerMillion: 3,
-  outputPerMillion: 15,
+  inputPerMillion: MODEL_LANES.reasoning.inputPerMillion,
+  outputPerMillion: MODEL_LANES.reasoning.outputPerMillion,
   charsPerToken: 4,
 } as const;
 
@@ -26,10 +34,15 @@ export function estimateTokens(text: string) {
   return Math.max(1, Math.ceil(chars / TOKEN_RATES.charsPerToken));
 }
 
-export function estimateCostUsd(tokenInput: number, tokenOutput: number) {
+export function estimateCostUsd(
+  tokenInput: number,
+  tokenOutput: number,
+  lane?: ModelLane | null,
+) {
+  const rates = lane ? MODEL_LANES[lane] : TOKEN_RATES;
   return (
-    (tokenInput / 1_000_000) * TOKEN_RATES.inputPerMillion +
-    (tokenOutput / 1_000_000) * TOKEN_RATES.outputPerMillion
+    (tokenInput / 1_000_000) * rates.inputPerMillion +
+    (tokenOutput / 1_000_000) * rates.outputPerMillion
   );
 }
 
@@ -108,6 +121,7 @@ ${input.task.description.trim()}${extra}`;
 export function buildSpanContext(input: {
   project: { name: string; githubOwner?: string | null; githubRepo?: string | null };
   priorOutputs: Array<{ agent: string; output: string }>;
+  route?: Pick<ModelRoute, "model" | "lane"> | null;
 }) {
   const repo =
     input.project.githubOwner && input.project.githubRepo
@@ -119,7 +133,8 @@ export function buildSpanContext(input: {
       : input.priorOutputs
           .map((item) => `${item.agent}: ${truncate(item.output.replace(/^# .+\n/, ""), 180)}`)
           .join("\n");
-  return `Project: ${input.project.name} (${repo})
+  const modelLine = input.route ? `${routedModelLine(input.route)}\n` : "";
+  return `${modelLine}Project: ${input.project.name} (${repo})
 Upstream:
 ${prior}`;
 }
@@ -137,13 +152,14 @@ export async function upsertAgentSpan(input: {
   result: string;
   startedAt: Date;
   endedAt?: Date;
+  lane?: ModelLane | null;
 }) {
   const ended = input.endedAt ?? new Date();
   const durationMs = Math.max(0, ended.getTime() - input.startedAt.getTime());
   const tokenInput = estimateTokens(input.inputText + "\n" + input.context);
   const tokenOutput = estimateTokens(input.output || "");
   const tokenTotal = tokenInput + tokenOutput;
-  const costUsd = estimateCostUsd(tokenInput, tokenOutput);
+  const costUsd = estimateCostUsd(tokenInput, tokenOutput, input.lane);
   const toolsJson = JSON.stringify(input.tools);
 
   await db.agentSpan.upsert({
@@ -199,10 +215,17 @@ export async function recordStepSpan(input: {
   result: string;
   startedAt?: Date | null;
   endedAt?: Date | null;
+  model?: string | null;
+  lane?: ModelLane | null;
 }) {
   const startedAt = input.startedAt ?? new Date();
   const endedAt = input.endedAt ?? new Date();
   const durationMs = Math.max(0, endedAt.getTime() - startedAt.getTime());
+  const lane = input.lane || (input.model ? laneForModel(input.model) : null);
+  const route =
+    input.model && lane
+      ? { model: input.model, lane }
+      : null;
   const tokenInput = estimateTokens(
     buildSpanInput({
       agentName: input.agent.name,
@@ -214,6 +237,7 @@ export async function recordStepSpan(input: {
       buildSpanContext({
         project: input.project,
         priorOutputs: input.priorOutputs,
+        route,
       }),
   );
   const tokenOutput = estimateTokens(input.output || "");
@@ -232,6 +256,7 @@ export async function recordStepSpan(input: {
     context: buildSpanContext({
       project: input.project,
       priorOutputs: input.priorOutputs,
+      route,
     }),
     tools: input.tools,
     output: input.output,
@@ -239,6 +264,7 @@ export async function recordStepSpan(input: {
     result: input.result,
     startedAt,
     endedAt,
+    lane,
   });
 
   const tool = input.tools[0]?.name ?? "artifact.write";
@@ -320,6 +346,12 @@ export async function hydrateMissingSpans() {
     );
     const started = step.startedAt ?? step.execution.startedAt ?? new Date();
     const ended = step.completedAt ?? new Date();
+    const routed = routeModel({
+      role: step.agent.role,
+      domain: step.agent.domain,
+      stepName: step.name,
+      taskTitle: task.title,
+    });
     await upsertAgentSpan({
       executionId: step.executionId,
       stepId: step.id,
@@ -333,6 +365,7 @@ export async function hydrateMissingSpans() {
       context: buildSpanContext({
         project: task.project,
         priorOutputs: [],
+        route: { model: routed.model, lane: routed.lane },
       }),
       tools: toolsFromGatewayEvents(step.gatewayEvents),
       output: step.output,
@@ -340,6 +373,7 @@ export async function hydrateMissingSpans() {
       result: step.status,
       startedAt: started,
       endedAt: ended,
+      lane: routed.lane,
     });
     const tool = step.gatewayEvents[0]?.toolName ?? "artifact.write";
     const durationMs = Math.max(0, ended.getTime() - started.getTime());

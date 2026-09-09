@@ -24,8 +24,22 @@ export const CONTROL_PLANE: ControlPlaneLayer[] = [
   {
     id: "runtime",
     label: "Agent Runtime",
-    href: "/agents",
-    why: "The bound specialist. Role comes from the registry, not from the prompt.",
+    href: "/runtime",
+    why: "Loads identity, instructions, context, memory, and tools. The Model Router picks the model. Intercepts every tool call through the Security Gateway. Retries, timeouts, tokens, and the final result live here — not in the prompt.",
+    tone: "live",
+  },
+  {
+    id: "routing",
+    label: "Model Router",
+    href: "/routing",
+    why: "Once multiple agents exist, do not make every agent use the same model. Route simple tasks to a cheap/fast model, architecture and RCA to reasoning, security to a specialized model.",
+    tone: "live",
+  },
+  {
+    id: "state",
+    label: "Agent State",
+    href: "/state",
+    why: "Durable workflow memory: goal, plan, tasks, current task, agent states, tool results, decisions, errors, approvals, and the final result. Not a chatbot that forgets when the turn ends.",
     tone: "live",
   },
   {
@@ -64,6 +78,13 @@ export const CONTROL_PLANE: ControlPlaneLayer[] = [
     tone: "live",
   },
   {
+    id: "evals",
+    label: "Agent Evals",
+    href: "/evals",
+    why: "Is this agent actually good? Scorecards per specialist — bug detection, RCA accuracy, hallucination, escalation — so a prompt, model, tool, or orchestration change is measured, not demoed.",
+    tone: "live",
+  },
+  {
     id: "risk",
     label: "Risk / Approval",
     href: "/approvals",
@@ -88,6 +109,12 @@ export const CONTROL_PLANE_ASCII = `                  ORCHESTRATOR
                  AGENT RUNTIME
                        │
                        ↓
+                  MODEL ROUTER
+                       │
+                       ↓
+                  AGENT STATE
+                       │
+                       ↓
               AUTONOMOUS WORKFLOW
                        │
              ┌─────────┴─────────┐
@@ -99,6 +126,8 @@ export const CONTROL_PLANE_ASCII = `                  ORCHESTRATOR
                  VERIFICATION
                        ↓
                  OBSERVABILITY
+                       ↓
+                  AGENT EVALS
                        ↓
               RISK / APPROVAL
                        ↓

@@ -34,7 +34,7 @@ export function ArchitectureMap({
         </Link>
       </div>
       <p className="mb-4 text-xs text-muted">
-        Observability, gateway, incident response, and execution close a loop around the orchestrator. Policy still sits in front of every tool.
+        The orchestrator schedules. The Agent Runtime binds each specialist. The Model Router picks the model. Agent Evals ask whether that specialist is actually good.
       </p>
 
       <div className="mb-4 grid gap-2 sm:grid-cols-3">
