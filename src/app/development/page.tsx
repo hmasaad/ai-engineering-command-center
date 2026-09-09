@@ -10,7 +10,11 @@ export default async function DevelopmentPage() {
   const [projects, playbooks, recent] = await Promise.all([
     db.project.findMany({ orderBy: { name: "asc" } }),
     db.workflow.findMany({
-      where: { domain: "development", kind: "playbook", isTemplate: true },
+      where: {
+        kind: "playbook",
+        isTemplate: true,
+        OR: [{ domain: "development" }, { name: "AI PR Resolution" }],
+      },
       orderBy: { name: "asc" },
     }),
     db.execution.findMany({
@@ -26,7 +30,7 @@ export default async function DevelopmentPage() {
       <PageHeader
         kicker="Phase 2"
         title="Development Intelligence"
-        description="Architect, Developer, PR Reviewer, Bug Investigation, tests, refactoring, debt, and docs are Command Center services — not independent products. They still pause at human approval."
+        description="Architect, Developer, PR Reviewer, Bug Investigation, tests, refactoring, debt, and docs are Command Center services — not independent products. Low-risk reads and tests run automatically. Create PR is review recommended. High-risk actions still require a human."
         actions={<PrimaryLink href="/workflows">Playbooks</PrimaryLink>}
       />
 

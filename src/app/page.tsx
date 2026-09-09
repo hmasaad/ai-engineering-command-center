@@ -1,46 +1,43 @@
 import Link from "next/link";
 import { ArchitectureMap } from "@/components/architecture-map";
+import { CommandCenterBoard } from "@/components/command-center-board";
 import { RefreshButton } from "@/components/submit-button";
 import {
   EmptyState,
-  MetricCard,
   PageHeader,
   PrimaryLink,
   StatusBadge,
 } from "@/components/ui";
+import { getCommandCenterBoard } from "@/lib/observability";
 import { getCommandCenterData } from "@/lib/queries";
 import { formatRelative } from "@/lib/utils";
 
 export default async function CommandCenterPage() {
-  const data = await getCommandCenterData();
+  const [data, board] = await Promise.all([
+    getCommandCenterData(),
+    getCommandCenterBoard(),
+  ]);
 
   return (
     <div>
       <PageHeader
-        kicker="Phase 6"
+        kicker="Observability"
         title="Command Center"
-        description="State a goal — “Prepare release 2.4.0”. The control plane runs policy, runtime, verification, observability, and risk before Execution. Agents do not patch or deploy first."
+        description="Every agent action is an event — workflow, agent, tool, risk, duration, tokens, status. The board is that stream, not a chatbot log."
         actions={
           <>
             <RefreshButton />
-            <PrimaryLink href="/projects/new">Register project</PrimaryLink>
+            <PrimaryLink href="/observability">Traces</PrimaryLink>
           </>
         }
       />
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
-        <MetricCard label="Projects" value={data.projectCount} href="/projects" />
-        <MetricCard label="Agents" value={data.agentCount} href="/agents" />
-        <MetricCard label="Open tasks" value={data.openTasks} href="/tasks" accent="info" />
-        <MetricCard
-          label="Approvals"
-          value={data.pendingApprovals}
-          href="/approvals"
-          accent={data.pendingApprovals ? "warn" : "muted"}
-        />
-        <MetricCard label="In flight" value={data.running} href="/history" />
-        <MetricCard label="Completed" value={data.completed} href="/history" accent="muted" />
-      </div>
+      <CommandCenterBoard
+        workflows={board.workflows}
+        agents={board.agents}
+        approvals={board.approvals}
+        metrics={board.metrics}
+      />
 
       <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
         <ArchitectureMap

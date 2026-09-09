@@ -23,6 +23,9 @@ export const PERMISSION_GRANTS = [
   "apply_deploy",
   "apply_rollback",
   "plan_build",
+  "modify_production_config",
+  "delete_database",
+  "send_external",
   "read_secrets",
   "exec_shell",
 ] as const;
@@ -55,6 +58,11 @@ export const TOOL_REQUIRED_PERMISSION: Record<string, PermissionGrant> = {
   "deploy.apply": "apply_deploy",
   "rollback.apply": "apply_rollback",
   "build.plan": "plan_build",
+  "config.modify": "modify_production_config",
+  "db.delete": "delete_database",
+  "production_database.delete": "delete_database",
+  "external_api.send": "send_external",
+  "send_customer_data_to_external_api": "send_external",
   "secrets.read": "read_secrets",
   "shell.exec": "exec_shell",
 };
@@ -130,6 +138,11 @@ const ROLE_DEFAULTS: Record<string, RoleDefaults> = {
     tools: [...GH_READ],
     permissions: ["read_repository"],
     riskLevel: "low",
+  },
+  verification: {
+    tools: ["artifact.write", "github.read_file", "ci.run_tests"],
+    permissions: ["write_artifact", "read_repository", "run_ci"],
+    riskLevel: "medium",
   },
   bug_investigation: {
     tools: ["artifact.write", ...GH_READ],

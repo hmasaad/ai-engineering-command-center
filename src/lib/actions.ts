@@ -464,7 +464,7 @@ export async function runAutonomousIntent(formData: FormData) {
   const parsed = parseEngineeringIntent(intent);
   if (!parsed) {
     return {
-      error: "Could not expand that intent. Try “Review this PR and prepare a fix.”",
+      error: "Could not expand that intent. Try “Analyze PR #182, identify problems, fix them, test the fix, and prepare it for review.”",
     };
   }
 

@@ -112,7 +112,16 @@ async function main() {
   ];
   for (const template of playbooks) {
     const existing = await db.workflow.findFirst({
-      where: { name: template.name, isTemplate: true, projectId: null },
+      where: {
+        isTemplate: true,
+        projectId: null,
+        name: {
+          in:
+            template.name === "AI PR Resolution"
+              ? ["AI PR Resolution", "PR fix"]
+              : [template.name],
+        },
+      },
     });
     const steps = template.steps.map((step, order) => ({
       order,
@@ -127,6 +136,7 @@ async function main() {
       await db.workflow.update({
         where: { id: existing.id },
         data: {
+          name: template.name,
           description: template.description,
           domain: template.domain,
           kind: "playbook",

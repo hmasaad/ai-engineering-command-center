@@ -1,5 +1,10 @@
 import type { Agent, ExecutionStep, GatewayEvent, Project, Task } from "@prisma/client";
 import { db } from "@/lib/db";
+import {
+  parseActionEvent,
+  toActionEvent,
+  type ActionEvent,
+} from "@/lib/action-event";
 import type { ProposedTool } from "@/lib/orchestrator/gateway";
 import { parseJson, truncate } from "@/lib/utils";
 
@@ -181,7 +186,7 @@ export async function upsertAgentSpan(input: {
 export async function recordStepSpan(input: {
   executionId: string;
   stepId: string;
-  agent: { id: string; name: string };
+  agent: { id: string; name: string; slug?: string; role?: string };
   action: string;
   order: number;
   instruction?: string | null;
@@ -195,6 +200,24 @@ export async function recordStepSpan(input: {
   startedAt?: Date | null;
   endedAt?: Date | null;
 }) {
+  const startedAt = input.startedAt ?? new Date();
+  const endedAt = input.endedAt ?? new Date();
+  const durationMs = Math.max(0, endedAt.getTime() - startedAt.getTime());
+  const tokenInput = estimateTokens(
+    buildSpanInput({
+      agentName: input.agent.name,
+      action: input.action,
+      instruction: input.instruction,
+      task: input.task,
+    }) +
+      "\n" +
+      buildSpanContext({
+        project: input.project,
+        priorOutputs: input.priorOutputs,
+      }),
+  );
+  const tokenOutput = estimateTokens(input.output || "");
+
   await upsertAgentSpan({
     executionId: input.executionId,
     stepId: input.stepId,
@@ -214,8 +237,34 @@ export async function recordStepSpan(input: {
     output: input.output,
     riskScore: input.riskScore,
     result: input.result,
-    startedAt: input.startedAt ?? new Date(),
-    endedAt: input.endedAt ?? undefined,
+    startedAt,
+    endedAt,
+  });
+
+  const tool = input.tools[0]?.name ?? "artifact.write";
+  await emitActionEvent({
+    executionId: input.executionId,
+    event: toActionEvent({
+      workflowId: input.executionId,
+      agent: input.agent.slug || input.agent.role || input.agent.name,
+      action: input.action,
+      tool,
+      riskScore: input.riskScore,
+      durationMs,
+      tokens: tokenInput + tokenOutput,
+      status: input.result,
+    }),
+  });
+}
+
+export async function emitActionEvent(input: { executionId: string; event: ActionEvent }) {
+  await db.executionEvent.create({
+    data: {
+      executionId: input.executionId,
+      type: "action",
+      message: `${input.event.agent} ${input.event.action} · ${input.event.tool} · ${input.event.status}`,
+      payload: JSON.stringify(input.event),
+    },
   });
 }
 
@@ -291,6 +340,21 @@ export async function hydrateMissingSpans() {
       result: step.status,
       startedAt: started,
       endedAt: ended,
+    });
+    const tool = step.gatewayEvents[0]?.toolName ?? "artifact.write";
+    const durationMs = Math.max(0, ended.getTime() - started.getTime());
+    await emitActionEvent({
+      executionId: step.executionId,
+      event: toActionEvent({
+        workflowId: step.executionId,
+        agent: step.agent.slug || step.agent.role,
+        action: step.name.replace(/\s+/g, "_").toLowerCase(),
+        tool,
+        riskScore: maxRisk,
+        durationMs,
+        tokens: estimateTokens(step.output || step.name),
+        status: step.status,
+      }),
     });
   }
 
@@ -461,6 +525,139 @@ export async function getExecutionTrace(executionId: string) {
         orderBy: { order: "asc" },
       },
       steps: { include: { agent: true, gatewayEvents: true }, orderBy: { order: "asc" } },
+      events: { orderBy: { createdAt: "asc" } },
     },
   });
+}
+
+const BOARD_AGENT_SLUGS = [
+  "developer",
+  "security",
+  "qa",
+  "pr-reviewer",
+  "verification",
+  "architect",
+];
+
+export async function getCommandCenterBoard() {
+  const [
+    executions,
+    runningSteps,
+    pendingApprovals,
+    featuredAgents,
+    statusGroups,
+    costAll,
+    finishedAgg,
+    executionCount,
+    approvalGroups,
+    actionRows,
+  ] = await Promise.all([
+    db.execution.findMany({
+      orderBy: { updatedAt: "desc" },
+      take: 6,
+      include: { workflow: true, task: true },
+    }),
+    db.executionStep.findMany({
+      where: { status: { in: ["running", "awaiting_gateway", "awaiting_approval"] } },
+      include: { agent: true },
+    }),
+    db.approval.findMany({
+      where: { status: "pending" },
+      orderBy: { requestedAt: "asc" },
+      take: 4,
+      include: {
+        execution: { include: { task: true, workflow: true } },
+        step: true,
+      },
+    }),
+    db.agent.findMany({
+      where: { slug: { in: BOARD_AGENT_SLUGS }, enabled: true },
+    }),
+    db.execution.groupBy({ by: ["status"], _count: { _all: true } }),
+    db.execution.aggregate({ _sum: { costUsd: true } }),
+    db.execution.aggregate({
+      where: {
+        status: { in: ["completed", "failed", "denied"] },
+        durationMs: { gt: 0 },
+      },
+      _avg: { durationMs: true },
+    }),
+    db.execution.count(),
+    db.approval.findMany({ select: { executionId: true } }),
+    db.executionEvent.findMany({
+      where: { type: "action" },
+      orderBy: { createdAt: "desc" },
+      take: 12,
+    }),
+  ]);
+
+  const countOf = (status: string) =>
+    statusGroups.find((row) => row.status === status)?._count._all ?? 0;
+  const terminal = countOf("completed") + countOf("failed") + countOf("denied");
+  const successRate = terminal === 0 ? 100 : (countOf("completed") / terminal) * 100;
+  const humanIds = new Set(approvalGroups.map((row) => row.executionId));
+  const humanInterventions =
+    executionCount === 0 ? 0 : (humanIds.size / executionCount) * 100;
+
+  const runningBySlug = new Set(runningSteps.map((step) => step.agent.slug));
+  const agentRows =
+    featuredAgents.length > 0
+      ? featuredAgents
+          .slice()
+          .sort((a, b) => BOARD_AGENT_SLUGS.indexOf(a.slug) - BOARD_AGENT_SLUGS.indexOf(b.slug))
+          .map((agent) => ({
+            name: agent.name.replace(/^AI /, ""),
+            status: runningBySlug.has(agent.slug) ? "Running" : "Idle",
+          }))
+      : [...runningBySlug].map((slug) => ({
+          name: slug,
+          status: "Running",
+        }));
+
+  let events: ActionEvent[] = actionRows
+    .map((row) => parseActionEvent(row.payload))
+    .filter((row): row is ActionEvent => Boolean(row));
+
+  if (events.length === 0) {
+    const spans = await db.agentSpan.findMany({
+      orderBy: { updatedAt: "desc" },
+      take: 12,
+      include: { agent: true, execution: true, step: true },
+    });
+    events = spans.map((span) => {
+      const tools = parseJson<ToolTrace[]>(span.tools, []);
+      return toActionEvent({
+        workflowId: span.executionId,
+        agent: span.agent.slug || span.agent.role,
+        action: span.step?.name.replace(/\s+/g, "_").toLowerCase() || "run",
+        tool: tools[0]?.name,
+        riskScore: span.riskScore,
+        durationMs: span.durationMs,
+        tokens: span.tokenTotal,
+        status: span.result,
+      });
+    });
+  }
+
+  return {
+    workflows: executions.map((execution) => ({
+      id: execution.id,
+      name: execution.workflow.name.replace(/^Service: /, ""),
+      status: execution.status,
+      href: `/history/${execution.id}`,
+    })),
+    agents: agentRows,
+    approvals: pendingApprovals.map((row) => ({
+      id: row.id,
+      title: row.execution.task.title,
+      href: `/history/${row.executionId}`,
+    })),
+    metrics: {
+      successRate,
+      avgDuration: Math.round(finishedAgg._avg.durationMs || 0),
+      agentCost: costAll._sum.costUsd || 0,
+      humanInterventions,
+    },
+    events,
+  };
 }

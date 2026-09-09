@@ -1,43 +1,55 @@
 import Link from "next/link";
-import { GatewayPipeline } from "@/components/gateway-pipeline";
-import { ToolLayerAscii, ToolLayerGroups } from "@/components/tool-layer-catalog";
+import {
+  GatewayPipeline,
+  SecurityGatewayAscii,
+  SecurityGatewayChecks,
+  SecurityGatewayExampleAscii,
+  SecurityGatewayExamples,
+} from "@/components/security-gateway";
 import { GhostLink, PageHeader, PrimaryLink, StatusBadge } from "@/components/ui";
 import { db } from "@/lib/db";
 import type { GatewayCheck } from "@/lib/security-gateway";
 import { parseJson } from "@/lib/utils";
 
-export default async function ToolLayerPage() {
+export default async function SecurityGatewayPage() {
   const events = await db.gatewayEvent.findMany({
     orderBy: { createdAt: "desc" },
     take: 8,
     include: { agent: true, execution: { include: { task: true } } },
   });
   const latest = events[0];
-  const latestChecks = latest ? parseJson<GatewayCheck[]>(latest.checks, []) : [];
+  const checks = latest ? parseJson<GatewayCheck[]>(latest.checks, []) : [];
 
   return (
     <div>
       <PageHeader
-        kicker="Tool Layer"
-        title="Controlled tools"
-        description="Agents do not call GitHub, CI, or observability directly. Every request goes through the Security Gateway — authentication, authorization, policy, risk, prompt injection, tool validation — then Allow, Deny, or Human Approval."
+        kicker="Security boundary"
+        title="Security Gateway"
+        description="Agents will have GitHub, databases, AWS, Kubernetes, CI/CD, production logs, filesystems, MCP, and APIs. They cannot call those directly. Every tool request is authenticated, authorized, scored, and scanned — then Allow, Deny, or Human Approval."
         actions={
           <>
-            <GhostLink href="/security/gateway">Security Gateway</GhostLink>
-            <GhostLink href="/security">Security</GhostLink>
+            <GhostLink href="/security/tools">Tool Layer</GhostLink>
             <PrimaryLink href="/security/permissions">Policy table</PrimaryLink>
           </>
         }
       />
 
-      <ToolLayerAscii />
+      <SecurityGatewayAscii />
 
       <p className="mt-3 max-w-3xl text-xs text-muted">
-        Shell, secrets, deploy apply, and MCP are not in this catalog. Requesting them is a default deny unless a detector is auditing the attempt.
+        Prompt injection, MCP security, agent hijacking, and data exfiltration are not a separate product. They are checks inside this gateway.
       </p>
 
       <div className="mt-8">
-        <ToolLayerGroups />
+        <SecurityGatewayExampleAscii />
+      </div>
+
+      <div className="mt-8">
+        <SecurityGatewayExamples />
+      </div>
+
+      <div className="mt-8">
+        <SecurityGatewayChecks checks={checks.length > 0 ? checks : undefined} />
       </div>
 
       <div className="mt-8 grid gap-6 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]">
@@ -45,19 +57,19 @@ export default async function ToolLayerPage() {
           verdict={latest?.verdict}
           riskScore={latest?.riskScore}
           toolName={latest?.toolName}
-          checks={latestChecks}
+          checks={checks}
         />
         <section className="rounded-xl border border-line bg-panel/80 p-5">
           <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted">
-            Live requests
+            Live decisions
           </div>
           <p className="mt-2 text-sm text-muted">
-            The gateway records every tool name the orchestrator proposed. Unknown names never reach GitHub or CI.
+            The orchestrator never invokes a tool until this boundary returns allow. Deny stops the run. Human holds the queue.
           </p>
           <div className="mt-4 grid gap-2">
             {events.length === 0 ? (
               <p className="text-sm text-muted">
-                No tool requests yet. Run a specialist to create the first decision.
+                No tool requests yet. Run a specialist, or intercept AI Developer with a hostile brief.
               </p>
             ) : (
               events.map((event) => (

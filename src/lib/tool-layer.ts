@@ -14,19 +14,25 @@ Observability
 ├── get_logs
 └── get_metrics`;
 
-export const TOOL_GATEWAY_ASCII = `                    Agent
-                      ↓
-                 Tool Request
-                      ↓
-              ┌───────────────┐
-              │ Tool Gateway  │
-              └───────┬───────┘
-                      ↓
-                 Policy Engine
-                      ↓
-             ┌────────┼────────┐
-             ↓        ↓        ↓
-           Allow     Deny    Approval`;
+export const TOOL_GATEWAY_ASCII = `Developer Agent
+      ↓
+Tool Request
+      ↓
+┌───────────────────────┐
+│   SECURITY GATEWAY    │
+│                       │
+│ Authentication        │
+│ Authorization         │
+│ Policy                │
+│ Risk Analysis         │
+│ Prompt Injection      │
+│ Tool Validation       │
+└───────────┬───────────┘
+            ↓
+       Allow / Deny /
+       Human Approval
+            ↓
+          Tool`;
 
 export type ToolLayerGroupId = "github" | "ci" | "observability";
 
@@ -77,7 +83,7 @@ export const TOOL_LAYER: ToolLayerDef[] = [
     short: "create_branch",
     group: "github",
     label: "Create branch",
-    risk: 26,
+    risk: 10,
     sideEffect: true,
     description: "Propose a branch. Does not push until Execution.",
     permission: "write_repository",
@@ -97,7 +103,7 @@ export const TOOL_LAYER: ToolLayerDef[] = [
     short: "run_tests",
     group: "ci",
     label: "Run tests",
-    risk: 16,
+    risk: 8,
     sideEffect: true,
     description: "Request a test run. Does not shell out on the operator machine.",
     permission: "run_ci",
@@ -107,7 +113,7 @@ export const TOOL_LAYER: ToolLayerDef[] = [
     short: "run_lint",
     group: "ci",
     label: "Run lint",
-    risk: 14,
+    risk: 8,
     sideEffect: true,
     description: "Request lint. Does not shell out on the operator machine.",
     permission: "run_ci",
@@ -164,6 +170,8 @@ export const TOOL_ALIASES: Record<string, string> = {
   "logs.read": "observability.get_logs",
   "metrics.read": "observability.get_metrics",
   "build.plan": "ci.build",
+  "production_database.delete": "db.delete",
+  "send_customer_data_to_external_api": "external_api.send",
 };
 
 export const PLATFORM_TOOLS = ["artifact.write"] as const;

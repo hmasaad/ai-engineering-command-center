@@ -1,36 +1,46 @@
 import Link from "next/link";
-import { ObservabilityPanel } from "@/components/observability-panel";
+import { ActionEventJson, CommandCenterBoard } from "@/components/command-center-board";
 import { SpanTree } from "@/components/span-tree";
 import { EmptyState, GhostLink, PageHeader, StatusBadge } from "@/components/ui";
 import {
   formatDuration,
   formatUsd,
+  getCommandCenterBoard,
   getObservabilityDashboard,
   TOKEN_RATES,
 } from "@/lib/observability";
 import { formatRelative } from "@/lib/utils";
 
 export default async function ObservabilityPage() {
-  const data = await getObservabilityDashboard();
+  const [data, board] = await Promise.all([
+    getObservabilityDashboard(),
+    getCommandCenterBoard(),
+  ]);
   const maxAgentTotal = Math.max(1, ...data.agentStats.map((row) => row.total));
 
   return (
     <div>
       <PageHeader
-        kicker="Phase 5"
+        kicker="Observability"
         title="Agent Observability"
-        description="Every specialist step is a span: input, context, tools, arguments, output, tokens, cost, duration, and risk — rolled up to the workflow result."
+        description="Every specialist action produces an event: workflow, agent, tool, risk, duration, tokens, status. You cannot approve what you cannot see."
         actions={<GhostLink href="/history">Execution history</GhostLink>}
       />
 
-      <ObservabilityPanel kpis={data.kpis} />
+      <CommandCenterBoard
+        workflows={board.workflows}
+        agents={board.agents}
+        approvals={board.approvals}
+        metrics={board.metrics}
+      />
 
       <p className="mt-3 max-w-3xl text-xs text-muted">
         Tokens and cost are estimated ({TOKEN_RATES.charsPerToken} chars/token, $
         {TOKEN_RATES.inputPerMillion}/M input, ${TOKEN_RATES.outputPerMillion}/M output).
         Specialists emit artifacts; they are not live model calls yet.{" "}
         {data.totals.spans} spans · {data.totals.tokens.toLocaleString()} tokens ·{" "}
-        {formatUsd(data.totals.costUsd)}.
+        {formatUsd(data.totals.costUsd)}. Active workflows {data.kpis.activeWorkflows} · running
+        agents {data.kpis.runningAgents} · security blocks {data.kpis.securityBlocks}.
       </p>
 
       <div className="mt-8 grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
@@ -75,6 +85,22 @@ export default async function ObservabilityPage() {
         </section>
 
         <div className="space-y-6">
+          <section className="rounded-xl border border-line bg-panel/80 p-5">
+            <h2 className="mb-1 text-sm font-medium">Action events</h2>
+            <p className="mb-4 text-xs text-muted">
+              One JSON object per agent action. Tool, risk band, duration, tokens, status.
+            </p>
+            {board.events.length === 0 ? (
+              <p className="text-sm text-muted">Events appear as specialists run.</p>
+            ) : (
+              <div className="space-y-3">
+                {board.events.slice(0, 6).map((event, index) => (
+                  <ActionEventJson key={`${event.workflow_id}-${event.agent}-${index}`} event={event} />
+                ))}
+              </div>
+            )}
+          </section>
+
           <section className="rounded-xl border border-line bg-panel/80 p-5">
             <h2 className="mb-4 text-sm font-medium">Per-agent load</h2>
             {data.agentStats.length === 0 ? (

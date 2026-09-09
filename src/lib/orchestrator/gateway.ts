@@ -5,41 +5,24 @@ import {
   DEFAULT_PERMISSIONS,
   DEFAULT_POLICIES,
   TOOLS,
-  scanMcpTool,
-  scanUntrustedText,
-  type DetectorHit,
-  type PermissionMode,
   type ToolName,
 } from "@/lib/security";
-import { TOOL_REQUIRED_PERMISSION } from "@/lib/registry";
 import {
   canonicalizeTool,
   declaredLayerTools,
-  isPlatformTool,
-  isToolLayerName,
-  permissionLookupNames,
   toolMentionedInText,
 } from "@/lib/tool-layer";
 import { parseJson } from "@/lib/utils";
+import {
+  DANGER_TRIGGERS,
+  evaluateSecurityGateway,
+  strictest as strictestDecision,
+  type GatewayDecision as SecurityGatewayDecision,
+  type ProposedTool as GatewayProposedTool,
+} from "@/lib/security-gateway";
 
-export type ProposedTool = {
-  name: ToolName;
-  action: string;
-  arguments: Record<string, unknown>;
-};
-
-export type GatewayDecision = {
-  phase: "preflight" | "postflight";
-  tool: ProposedTool;
-  riskScore: number;
-  verdict: "allow" | "deny" | "human";
-  reasons: string[];
-  detectors: DetectorHit[];
-  summary: string;
-  permissionMode: PermissionMode;
-};
-
-const VERDICT_RANK = { allow: 0, human: 1, deny: 2 } as const;
+export type ProposedTool = GatewayProposedTool;
+export type GatewayDecision = SecurityGatewayDecision;
 
 export function proposeTools(input: {
   agent: Agent;
@@ -73,7 +56,7 @@ export function proposeTools(input: {
 
   if (
     (role === "developer" || role === "refactoring") &&
-    (action === "implement" || action === "refactor")
+    (action === "implement" || action === "refactor" || action === "fix")
   ) {
     tools.push({
       name: "github.search_code",
@@ -85,6 +68,12 @@ export function proposeTools(input: {
       action: "propose",
       arguments: { title: input.task.title },
     });
+  }
+
+  if (
+    (role === "developer" || role === "refactoring") &&
+    (action === "create_pr" || action === "open_pr")
+  ) {
     tools.push({
       name: "github.create_pr",
       action: "propose",
@@ -105,7 +94,7 @@ export function proposeTools(input: {
     });
   }
 
-  if (role === "qa" || role === "test_generation" || role === "test_failure") {
+  if (role === "qa" || role === "test_generation" || role === "test_failure" || role === "verification") {
     tools.push({
       name: "ci.run_tests",
       action: "run",
@@ -247,7 +236,8 @@ export function proposeTools(input: {
     const declaredCanonical = declaredLayerTools(declaredTools);
     const declared = declaredCanonical
       .map((name) => toolFromRegistry(name, input))
-      .filter((item): item is ProposedTool => item !== null);
+      .filter((item): item is ProposedTool => item !== null)
+      .filter((item) => toolAllowedForAction(item.name, input.action));
     const extraDanger: ProposedTool[] = [];
     const seenDanger = new Set<string>();
     for (const name of DANGEROUS_TOOLS) {
@@ -255,11 +245,19 @@ export function proposeTools(input: {
       if (seenDanger.has(canonical)) continue;
       seenDanger.add(canonical);
       if (declaredCanonical.includes(canonical)) continue;
-      if (!toolMentionedInText(canonical, text)) continue;
+      const triggered = DANGER_TRIGGERS[canonical]?.test(text) || toolMentionedInText(canonical, text);
+      if (!triggered) continue;
       const proposed = toolFromRegistry(canonical, input);
       if (proposed) extraDanger.push(proposed);
     }
     tools = [...declared, ...extraDanger];
+  }
+
+  for (const [name, trigger] of Object.entries(DANGER_TRIGGERS)) {
+    if (!trigger.test(text)) continue;
+    if (tools.some((tool) => canonicalizeTool(tool.name) === name)) continue;
+    const proposed = toolFromRegistry(name, input);
+    if (proposed) tools.push(proposed);
   }
 
   const seen = new Set<string>();
@@ -269,6 +267,14 @@ export function proposeTools(input: {
     seen.add(key);
     return true;
   });
+}
+
+function toolAllowedForAction(name: string, action: string) {
+  const canonical = canonicalizeTool(name);
+  if (canonical === "github.create_pr" || canonical === "github.patch") {
+    return action === "create_pr" || action === "open_pr";
+  }
+  return true;
 }
 
 function toolFromRegistry(
@@ -347,6 +353,23 @@ function toolFromRegistry(
       arguments: { version: input.task.title },
     };
   }
+  if (toolName === "db.delete" || toolName === "production_database.delete") {
+    return {
+      name: "db.delete",
+      action: "delete",
+      arguments: { env: "production", target: input.task.title },
+    };
+  }
+  if (
+    toolName === "external_api.send" ||
+    toolName === "send_customer_data_to_external_api"
+  ) {
+    return {
+      name: "external_api.send",
+      action: "send",
+      arguments: { destination: "external", payload: input.task.title },
+    };
+  }
   if (toolName === "observability.get_logs" || toolName === "logs.read") {
     return {
       name: "observability.get_logs",
@@ -368,61 +391,10 @@ function toolFromRegistry(
   };
 }
 
-function toolMeta(name: string) {
-  const canonical = canonicalizeTool(name);
-  return TOOLS.find((item) => item.name === canonical) ?? TOOLS.find((item) => item.name === name);
-}
-
-function permissionFor(
-  permissions: Array<{ agentSlug: string; toolName: string; mode: string }>,
-  agentSlug: string,
-  toolName: string,
-): PermissionMode {
-  const names = permissionLookupNames(toolName);
-  for (const name of names) {
-    const specific = permissions.find(
-      (row) => row.agentSlug === agentSlug && row.toolName === name,
-    );
-    if (specific) return specific.mode as PermissionMode;
-  }
-  for (const name of names) {
-    const global = permissions.find(
-      (row) => row.agentSlug === "*" && row.toolName === name,
-    );
-    if (global) return global.mode as PermissionMode;
-  }
-  return "require_approval";
-}
-
-function isSecurityAnalyzer(agent: Agent) {
-  return (
-    agent.domain === "security" &&
-    [
-      "prompt_injection",
-      "agent_hijacking",
-      "rag_poisoning",
-      "data_exfiltration",
-      "mcp_security",
-      "security_gateway",
-      "tool_permissions",
-      "security",
-      "threat_response",
-    ].includes(agent.role)
-  );
-}
-
-function mergeHits(hits: DetectorHit[]): DetectorHit[] {
-  const byKey = new Map<string, DetectorHit>();
-  for (const hit of hits) {
-    const key = `${hit.id}:${hit.detail}`;
-    if (!byKey.has(key)) byKey.set(key, hit);
-  }
-  return [...byKey.values()];
-}
-
 export function evaluateToolRequest(input: {
   agent: Agent;
   task: Task;
+  project?: Project | null;
   instruction?: string | null;
   phase: "preflight" | "postflight";
   tool: ProposedTool;
@@ -430,171 +402,11 @@ export function evaluateToolRequest(input: {
   policies: Array<{ detector: string; enabled: boolean; weight: number; name: string }>;
   permissions: Array<{ agentSlug: string; toolName: string; mode: string }>;
 }): GatewayDecision {
-  const enabled: Record<string, number> = {};
-  const disabled = new Set<string>();
-  for (const policy of input.policies) {
-    if (policy.enabled) enabled[policy.detector] = policy.weight;
-    else disabled.add(policy.detector);
-  }
-  const policyOn = (id: string) => {
-    if (disabled.has(id)) return false;
-    if (id in enabled) return true;
-    return DEFAULT_POLICIES.some((policy) => policy.detector === id);
-  };
-
-  const hits: DetectorHit[] = [];
-  if (policyOn("prompt_injection") || policyOn("agent_hijacking") || policyOn("rag_poisoning") || policyOn("data_exfiltration")) {
-    hits.push(...scanUntrustedText(input.text, enabled));
-  }
-  if (policyOn("mcp_security")) {
-    hits.push(
-      ...scanMcpTool(
-        input.tool.name,
-        input.tool.action,
-        input.text,
-        enabled.mcp_security ?? 26,
-      ),
-    );
-  }
-
-  const permissionMode = permissionFor(input.permissions, input.agent.slug, input.tool.name);
-  const canonicalTool = canonicalizeTool(input.tool.name);
-  const knownTool = Boolean(toolMeta(input.tool.name)) || isToolLayerName(input.tool.name);
-  const declaredTools = parseJson<string[]>(input.agent.tools, []);
-  const declaredCanonical = declaredLayerTools(declaredTools);
-  const grants = parseJson<string[]>(input.agent.permissions, []);
-  const requiredGrant =
-    TOOL_REQUIRED_PERMISSION[canonicalTool] ?? TOOL_REQUIRED_PERMISSION[input.tool.name];
-  const analyzer = isSecurityAnalyzer(input.agent);
-  const undeclared =
-    !analyzer &&
-    declaredCanonical.length > 0 &&
-    !isPlatformTool(canonicalTool) &&
-    !declaredCanonical.includes(canonicalTool) &&
-    !declaredTools.includes(input.tool.name);
-  const missingGrant =
-    !analyzer &&
-    grants.length > 0 &&
-    Boolean(requiredGrant) &&
-    !grants.includes(requiredGrant);
-
-  if (policyOn("tool_permission")) {
-    if (permissionMode === "deny") {
-      hits.push({
-        id: "tool_permission",
-        name: "Tool Permission Manager",
-        score: enabled.tool_permission ?? 40,
-        detail: `${input.tool.name} is denied for ${input.agent.slug === "security-gateway" ? "this agent" : input.agent.name}.`,
-      });
-    } else if (permissionMode === "require_approval") {
-      hits.push({
-        id: "tool_permission",
-        name: "Tool Permission Manager",
-        score: Math.round((enabled.tool_permission ?? 20) * 0.7),
-        detail: `${input.tool.name} requires human approval (${input.agent.name}).`,
-      });
-    }
-    if (undeclared) {
-      hits.push({
-        id: "tool_permission",
-        name: "Agent Registry",
-        score: enabled.tool_permission ?? 40,
-        detail: `${input.tool.name} is not in ${input.agent.slug}’s declared tools.`,
-      });
-    }
-    if (missingGrant && requiredGrant) {
-      hits.push({
-        id: "tool_permission",
-        name: "Agent Registry",
-        score: enabled.tool_permission ?? 40,
-        detail: `${input.agent.slug} is missing permission ${requiredGrant}.`,
-      });
-    }
-  }
-
-  const unique = mergeHits(hits);
-  const toolRisk = toolMeta(input.tool.name)?.risk ?? 12;
-  const priorityBump =
-    input.task.priority === "critical" ? 15 : input.task.priority === "high" ? 8 : 0;
-  const detectorScore = unique.reduce((sum, hit) => sum + hit.score, 0);
-  const riskScore = Math.min(100, 6 + toolRisk + priorityBump + Math.round(detectorScore * 0.45));
-
-  const reasons = unique.map((hit) => `${hit.name}: ${hit.detail}`);
-  const dangerous =
-    (DANGEROUS_TOOLS as string[]).includes(input.tool.name) ||
-    (DANGEROUS_TOOLS as string[]).includes(canonicalTool);
-  const hostile = unique.some((hit) =>
-    ["prompt_injection", "agent_hijacking", "rag_poisoning", "data_exfiltration"].includes(hit.id),
-  );
-
-  let verdict: GatewayDecision["verdict"] = "allow";
-  if (!knownTool) {
-    verdict = "deny";
-    reasons.push(
-      "Tool is not in the Tool Layer catalog. Agents cannot call GitHub, CI, or observability APIs directly.",
-    );
-  } else if (permissionMode === "deny" || undeclared || missingGrant) {
-    verdict = "deny";
-    if (permissionMode === "deny") {
-      reasons.push(`Policy: ${input.tool.name} is denied.`);
-    }
-    if (undeclared) {
-      reasons.push(`Registry: ${input.tool.name} is not in this agent’s tools.`);
-    }
-    if (missingGrant && requiredGrant) {
-      reasons.push(`Registry: missing permission ${requiredGrant}.`);
-    }
-  } else if (riskScore >= 88 && dangerous && !analyzer) {
-    verdict = "deny";
-    reasons.push("Risk score at deny threshold for a side-effecting tool.");
-  } else if (
-    permissionMode === "require_approval" ||
-    (hostile && dangerous && !analyzer) ||
-    (riskScore >= 42 && unique.length > 0)
-  ) {
-    verdict = "human";
-    if (permissionMode === "require_approval") {
-      reasons.push(`Policy: ${input.tool.name} requires a human before it runs.`);
-    } else if (hostile && dangerous) {
-      reasons.push("Hostile input combined with a side-effecting tool.");
-    } else {
-      reasons.push("Risk score requires a human gate.");
-    }
-  }
-
-  if (analyzer && verdict === "deny" && permissionMode !== "deny") {
-    verdict = "human";
-    reasons.push("Security analyzer: deny downgraded to human so the detector can still report.");
-  }
-
-  if (analyzer && !dangerous && permissionMode === "allow") {
-    verdict = "allow";
-  }
-
-  if (reasons.length === 0) {
-    reasons.push("No detector hits. Tool is within the default allow list.");
-  }
-
-  const summary = `${verdict.toUpperCase()} · ${input.tool.name} · risk ${riskScore} · ${input.agent.name} (${input.phase})`;
-
-  return {
-    phase: input.phase,
-    tool: input.tool,
-    riskScore,
-    verdict,
-    reasons,
-    detectors: unique,
-    summary,
-    permissionMode,
-  };
+  return evaluateSecurityGateway(input);
 }
 
 export function strictest(decisions: GatewayDecision[]): GatewayDecision {
-  return decisions.reduce((best, current) => {
-    if (VERDICT_RANK[current.verdict] > VERDICT_RANK[best.verdict]) return current;
-    if (current.verdict === best.verdict && current.riskScore > best.riskScore) return current;
-    return best;
-  });
+  return strictestDecision(decisions);
 }
 
 export async function loadGatewayConfig() {
@@ -647,6 +459,7 @@ export async function evaluatePhase(input: {
     evaluateToolRequest({
       agent: input.agent,
       task: input.task,
+      project: input.project,
       instruction: input.instruction,
       phase: input.phase,
       tool,
@@ -659,7 +472,7 @@ export async function evaluatePhase(input: {
   return { decision: strictest(decisions), tools };
 }
 
-/** Public Tool Gateway entry. Agents request tools; they never call GitHub, CI, or observability directly. */
+/** Public Security Gateway entry. Agents request tools; they never call GitHub, databases, AWS, or APIs directly. */
 export async function requestTool(input: {
   agent: Agent;
   action: string;

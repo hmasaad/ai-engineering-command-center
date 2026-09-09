@@ -4,7 +4,8 @@ import { SecurityRunForm } from "@/components/security-run-form";
 import { EmptyState, GhostLink, PageHeader, PrimaryLink, StatusBadge } from "@/components/ui";
 import { db } from "@/lib/db";
 import { SECURITY_SERVICES } from "@/lib/security";
-import { formatRelative } from "@/lib/utils";
+import type { GatewayCheck } from "@/lib/security-gateway";
+import { formatRelative, parseJson } from "@/lib/utils";
 
 export default async function SecurityPage() {
   const [projects, playbooks, recent, events, denied] = await Promise.all([
@@ -28,15 +29,17 @@ export default async function SecurityPage() {
   ]);
 
   const latest = events[0];
+  const latestChecks = latest ? parseJson<GatewayCheck[]>(latest.checks, []) : [];
 
   return (
     <div>
       <PageHeader
         kicker="Phase 3"
         title="Security"
-        description="Prompt injection, hijack, RAG poisoning, MCP, exfil, permissions, review, gateway, and threat response are Command Center services. Every agent tool request still passes the Agent Security Gateway."
+        description="Prompt injection, hijack, RAG poisoning, MCP, and exfil are checks inside the Security Gateway — not a sidecar product. Every agent tool request is authenticated, authorized, scored, and scanned before Allow, Deny, or Human Approval."
         actions={
           <>
+            <GhostLink href="/security/gateway">Security Gateway</GhostLink>
             <GhostLink href="/security/tools">Tool Layer</GhostLink>
             <PrimaryLink href="/security/permissions">Tool permissions</PrimaryLink>
           </>
@@ -48,6 +51,7 @@ export default async function SecurityPage() {
           verdict={latest?.verdict}
           riskScore={latest?.riskScore}
           toolName={latest?.toolName}
+          checks={latestChecks}
         />
         <section className="rounded-xl border border-line bg-panel/80 p-5">
           <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted">

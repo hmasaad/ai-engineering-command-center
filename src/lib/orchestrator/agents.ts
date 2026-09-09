@@ -176,10 +176,39 @@ function hitsBlock(hits: ReturnType<typeof scanUntrustedText>) {
 }
 
 function architect(ctx: RunContext) {
-  return `${header(ctx, "Technical plan")}
+  if (ctx.action === "understand") {
+    const pr = ctx.task.focusRef
+      ? `pull request #${ctx.task.focusRef}`
+      : "the linked change";
+    return `${header(ctx, "Understood intent")}
 ## Repository snapshot
 ${githubSnapshot(ctx)}
 
+## Operator request
+${ctx.task.description.trim() || ctx.task.title}
+
+## What Command Center will do
+Resolve ${pr} as an engineering control-plane job — not a chatbot reply.
+
+1. **Understand** this request (this step).
+2. **Plan** the remaining graph.
+3. Run **Code Review**, **Security**, and **Bug Analysis** in parallel.
+4. **Generate Fix** from the joined findings.
+5. **Run Tests**, then **Risk Analysis**.
+6. **Human Approval** (mandatory).
+7. **Create PR** only after the human gate.
+
+## Done when
+Problems in ${pr} are named, a bounded fix exists, tests could falsify it, residual risk is scored, and a human has allowed Create PR.
+
+## Must not change
+Unrelated refactors, production config, deploys, and database deletes stay out of scope.
+${footer(ctx)}`;
+  }
+
+  return `${header(ctx, "Technical plan")}
+## Repository snapshot
+${githubSnapshot(ctx)}
 ## Upstream context
 ${prior(ctx)}
 
@@ -188,17 +217,49 @@ ${prior(ctx)}
 2. Introduce the smallest interface that satisfies “${ctx.task.title}”, preferring an additive path over a rewrite.
 3. Call out migration, observability, and rollback before implementation starts.
 
+## Graph
+After this plan, Code Review, Security, and Bug Analysis run in parallel, then Developer → QA → Verification → Human Approval → Create PR.
+
 ## System impact
 - **Code:** Likely touches the primary service path${ctx.project.githubRepo ? ` in \`${ctx.project.githubRepo}\`` : ""}.
 - **GitHub:** ${ctx.github?.pullRequests?.length || 0} open PRs, ${ctx.github?.issues?.length || 0} open issues in the last sync.
 - **Risk:** ${ctx.task.priority === "critical" || ctx.task.priority === "high" ? "Elevated — keep the blast radius tight and require a human gate before merge." : "Moderate — standard review and tests are sufficient."}
 
 ## Recommendation
-Approve this plan to release the AI Developer service. Reject to send the task back with a tighter brief.
+Continue the parallel analysis. Do not open a pull request until Human Approval clears.
 ${footer(ctx)}`;
 }
 
 function developer(ctx: RunContext) {
+  if (ctx.action === "create_pr" || ctx.action === "open_pr") {
+    return `${header(ctx, "Create PR")}
+## Upstream context
+${prior(ctx)}
+
+## Proposed pull request
+Open a review PR for “${ctx.task.title}” against ${ctx.project.name}${
+      ctx.project.githubUrl
+        ? ` (${ctx.project.githubOwner}/${ctx.project.githubRepo})`
+        : ""
+    }.
+
+## Title
+fix: ${ctx.task.title}
+
+## Body
+- **Problem:** Named by Code Review, Security, and Bug Analysis.
+- **Fix:** Bounded slice from Generate Fix.
+- **Tests:** Evidence from Run Tests / Verification.
+- **Risk:** Residual risk from Risk Analysis. Human Approval already cleared this gate.
+
+## Tools
+This step requests \`github.create_pr\`. It does not merge.
+
+## Handoff
+Waiting on Execution. A proposed PR is not a live GitHub pull request until Execution.
+${footer(ctx)}`;
+  }
+
   return `${header(ctx, "Implementation brief")}
 ## Upstream context
 ${prior(ctx)}
@@ -217,7 +278,7 @@ Implement “${ctx.task.title}” against ${ctx.project.name}${
 4. Leave a rollback note (feature flag, revert commit, or config switch).
 
 ## Handoff
-Ready for the next Development Intelligence service in this workflow. Do not merge until the human gate clears.
+Ready for QA and Verification. Do not open a pull request until Human Approval clears.
 ${footer(ctx)}`;
 }
 
@@ -239,6 +300,33 @@ Prove that “${ctx.task.title}” works in ${ctx.project.name} and that adjacen
 
 ## Verdict
 ${ctx.task.priority === "critical" ? "Hold release until the critical cases pass." : "Pass if happy path + one failure path are green."}
+${footer(ctx)}`;
+}
+
+function verification(ctx: RunContext) {
+  const go =
+    ctx.task.priority === "critical"
+      ? "No-go until a human tightens the slice. Critical priority."
+      : "Go for Human Approval, then Create PR. Residual risk is named below.";
+  return `${header(ctx, "Risk analysis")}
+## Upstream context
+${prior(ctx)}
+
+## Evidence
+QA named cases that could falsify the Generate Fix brief. This step does not claim CI ran on the operator machine.
+
+## Residual risk
+| Area | Score | Note |
+| --- | --- | --- |
+| Correctness | ${ctx.task.priority === "critical" ? "high" : "medium"} | Fix is still an artifact, not a live patch |
+| Security | medium | Security findings from the parallel scan still apply |
+| Operability | low | Rollback must stay in the fix brief |
+| Process | low | Create PR is after Human Approval |
+
+## Go / no-go
+**${go}**
+
+Human Approval is mandatory. Create PR is medium-risk and only runs after the gate.
 ${footer(ctx)}`;
 }
 
@@ -659,7 +747,7 @@ ${others.length ? hitsBlock(others) : "None."}
 ## Disposition
 ${hits.length ? "Treat the brief as hostile. The gateway should not obey injected instructions. Specialist output below is analysis, not compliance." : "No classic injection patterns. Still do not promote this text into a system prompt."}
 
-The Agent Security Gateway already saw this input on preflight. This service exists so operators can run the detector on demand — it is not a separate product.
+The Agent Security Gateway already evaluated this input on preflight (identity, tool, resources, arguments, data, policy, injection, suspicion, risk, and whether a human must approve). This service exists so operators can run the detector on demand — it is not a separate product.
 ${footer(ctx)}`;
 }
 
@@ -776,7 +864,7 @@ async function securityGateway(ctx: RunContext) {
   return `${header(ctx, "Gateway audit")}
 Every agent action already passed through:
 
-\`Agent → Tool request → Security Gateway → Policy evaluation → Risk score → Allow | Deny | Human\`
+\`Agent → Tool request → Security Gateway → Allow | Deny | Human Approval\`
 
 ## Recent decisions on ${ctx.project.name}
 ${lines}
@@ -974,6 +1062,7 @@ const runners: Record<string, (ctx: RunContext) => string | Promise<string>> = {
   architect,
   developer,
   qa,
+  verification,
   reviewer,
   pr_reviewer: prReviewer,
   code_reviewer: prReviewer,

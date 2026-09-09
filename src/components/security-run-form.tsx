@@ -188,7 +188,7 @@ export function SecurityRunForm({
       {error ? <p className="text-sm text-danger">{error}</p> : null}
       {mode === "intercept" ? (
         <p className="text-sm text-muted">
-          Sends this brief as an AI Developer implement request. The gateway still sits in front — this is how you prove Security is a control plane, not a separate product.
+          Sends this brief as an AI Developer implement request. The Security Gateway still sits in front — Allow, Deny, or Human Approval — before any tool runs.
         </p>
       ) : null}
 

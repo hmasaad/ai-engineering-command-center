@@ -32,22 +32,42 @@ export type PublicGraphTask = {
   };
 };
 
-export const PR_FIX_GRAPH: GraphNodeDef[] = [
+export const PR_RESOLUTION_GRAPH: GraphNodeDef[] = [
   {
-    key: "analyze-pr",
-    name: "Analyze PR",
-    agent: "pr-reviewer",
-    action: "review",
+    key: "understand-intent",
+    name: "Understand Intent",
+    agent: "architect",
+    action: "understand",
     dependsOn: [],
     requiresApproval: false,
-    instruction: "Read the linked pull request. Name intent, blast radius, and what a fix would have to preserve.",
+    instruction:
+      "Restate the operator request as a bounded PR-resolution job: which PR, what “done” means, and what must not change.",
+  },
+  {
+    key: "create-plan",
+    name: "Create Plan",
+    agent: "architect",
+    action: "plan",
+    dependsOn: ["understand-intent"],
+    requiresApproval: false,
+    instruction:
+      "Name the parallel analysis (code review, security, bug analysis), the fix slice, tests, risk, the human gate, then Create PR.",
+  },
+  {
+    key: "code-review",
+    name: "Code Review",
+    agent: "pr-reviewer",
+    action: "review",
+    dependsOn: ["create-plan"],
+    requiresApproval: false,
+    instruction: "Read the linked pull request. Name defects, blast radius, and what a fix must preserve.",
   },
   {
     key: "security-review",
-    name: "Security Review",
+    name: "Security",
     agent: "security",
     action: "scan",
-    dependsOn: ["analyze-pr"],
+    dependsOn: ["create-plan"],
     requiresApproval: false,
     instruction: "Threat-model the PR and the likely fix. Residual risk before any patch.",
   },
@@ -56,7 +76,7 @@ export const PR_FIX_GRAPH: GraphNodeDef[] = [
     name: "Bug Analysis",
     agent: "bug-investigation",
     action: "investigate",
-    dependsOn: ["security-review"],
+    dependsOn: ["create-plan"],
     requiresApproval: false,
     instruction: "Hypothesize root cause from the PR, review notes, and security findings.",
   },
@@ -65,9 +85,9 @@ export const PR_FIX_GRAPH: GraphNodeDef[] = [
     name: "Generate Fix",
     agent: "developer",
     action: "implement",
-    dependsOn: ["bug-analysis"],
+    dependsOn: ["code-review", "security-review", "bug-analysis"],
     requiresApproval: false,
-    instruction: "Propose a bounded patch. Do not apply it. Name rollback.",
+    instruction: "Propose a bounded patch from the joined analysis. Do not open a PR yet. Name rollback.",
   },
   {
     key: "run-tests",
@@ -79,48 +99,75 @@ export const PR_FIX_GRAPH: GraphNodeDef[] = [
     instruction: "Define the evidence that would falsify the fix: happy path, failure, one regression.",
   },
   {
-    key: "review-fix",
-    name: "Review Fix",
-    agent: "code-reviewer",
-    action: "review",
+    key: "risk-analysis",
+    name: "Risk Analysis",
+    agent: "verification",
+    action: "verify",
     dependsOn: ["run-tests"],
     requiresApproval: false,
-    instruction: "Review the proposed fix for bugs and security issues. Read-only.",
+    instruction: "Score residual risk of merging the proposed fix. Go / no-go for the human gate.",
   },
   {
     key: "human-approval",
     name: "Human Approval",
     agent: "reviewer",
     action: "review",
-    dependsOn: ["review-fix"],
+    dependsOn: ["risk-analysis"],
     requiresApproval: true,
-    instruction: "Pause for a human. Approve to accept the fix brief; reject to halt.",
+    instruction: "Mandatory pause. Approve to allow Create PR; reject to halt.",
+  },
+  {
+    key: "create-pr",
+    name: "Create PR",
+    agent: "developer",
+    action: "create_pr",
+    dependsOn: ["human-approval"],
+    requiresApproval: false,
+    instruction: "After the human gate, propose github.create_pr for the approved fix. Do not merge.",
   },
 ];
 
-export const PR_FIX_ASCII = `Task #1
-Analyze PR
-      ↓
-Task #2
-Security Review
-      ↓
-Task #3
-Bug Analysis
-      ↓
-Task #4
-Generate Fix
-      ↓
-Task #5
-Run Tests
-      ↓
-Task #6
-Review Fix
-      ↓
-Task #7
-Human Approval`;
+/** @deprecated Use PR_RESOLUTION_GRAPH */
+export const PR_FIX_GRAPH = PR_RESOLUTION_GRAPH;
+
+export const PR_RESOLUTION_ASCII = `                 User Request
+                      ↓
+                 ORCHESTRATOR
+                      ↓
+               Understand Intent
+                      ↓
+                Create Plan
+                      ↓
+        ┌─────────────┼─────────────┐
+        ↓             ↓             ↓
+   Code Review    Security       Bug Analysis
+        │             │             │
+        └─────────────┼─────────────┘
+                      ↓
+                Developer Agent
+                      ↓
+                 Generate Fix
+                      ↓
+                   QA Agent
+                      ↓
+                 Run Tests
+                      ↓
+              Verification Agent
+                      ↓
+                 Risk Analysis
+                      ↓
+                HUMAN APPROVAL
+                      ↓
+                   Create PR`;
+
+export const PR_FIX_ASCII = PR_RESOLUTION_ASCII;
+
+export const PR_RESOLUTION_NAME = "AI PR Resolution";
+export const PR_RESOLUTION_ALIASES = ["PR fix", PR_RESOLUTION_NAME];
 
 export const GRAPH_TEMPLATES: Record<string, GraphNodeDef[]> = {
-  "PR fix": PR_FIX_GRAPH,
+  [PR_RESOLUTION_NAME]: PR_RESOLUTION_GRAPH,
+  "PR fix": PR_RESOLUTION_GRAPH,
 };
 
 export function playbookFromGraph(
@@ -143,12 +190,15 @@ export function playbookFromGraph(
   };
 }
 
-export const PR_FIX_PLAYBOOK = playbookFromGraph(
-  "PR fix",
+export const PR_RESOLUTION_PLAYBOOK = playbookFromGraph(
+  PR_RESOLUTION_NAME,
   "autonomous",
-  "Intent-driven task graph: analyze the PR, security review, bug analysis, generate a fix, run tests, review the fix, then a human gate.",
-  PR_FIX_GRAPH,
+  "First real workflow: understand the PR, plan, run code review / security / bug analysis in parallel, generate a fix, test, score risk, pause for a human, then propose Create PR.",
+  PR_RESOLUTION_GRAPH,
 );
+
+/** @deprecated Use PR_RESOLUTION_PLAYBOOK */
+export const PR_FIX_PLAYBOOK = PR_RESOLUTION_PLAYBOOK;
 
 export function graphFromWorkflowSteps(
   steps: Array<WorkflowStep & { agent: Agent }>,

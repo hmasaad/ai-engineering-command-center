@@ -17,8 +17,8 @@ export const CONTROL_PLANE: ControlPlaneLayer[] = [
   {
     id: "policy",
     label: "Policy Engine",
-    href: "/security/permissions",
-    why: "Permissions and detectors run before a tool is invoked. Allow, deny, or hold for a human.",
+    href: "/security/gateway",
+    why: "Authentication, authorization, policy, risk, prompt injection, and tool validation run before a tool is invoked. Allow, deny, or hold for a human.",
     tone: "warn",
   },
   {
@@ -32,14 +32,14 @@ export const CONTROL_PLANE: ControlPlaneLayer[] = [
     id: "workflow",
     label: "Autonomous Workflow",
     href: "/autonomous",
-    why: "The expanded playbook — release, production alert — not a single unconstrained agent.",
+    why: "The expanded playbook — AI PR Resolution, release, production alert — not a single unconstrained agent.",
     tone: "live",
   },
   {
     id: "tools",
     label: "Tool Execution",
     href: "/security/tools",
-    why: "GitHub, CI, and observability only. Agent → Tool Request → Tool Gateway → Policy → Allow / Deny / Approval.",
+    why: "Agents never call GitHub, databases, AWS, or APIs directly. Agent → Tool Request → Security Gateway → Allow / Deny / Human Approval.",
     tone: "warn",
   },
   {
@@ -60,14 +60,14 @@ export const CONTROL_PLANE: ControlPlaneLayer[] = [
     id: "observability",
     label: "Observability",
     href: "/observability",
-    why: "Spans for input, tools, tokens, cost, duration, and risk. You cannot approve what you cannot see.",
+    why: "Every action is an event: workflow, agent, tool, risk, duration, tokens, status. You cannot approve what you cannot see.",
     tone: "live",
   },
   {
     id: "risk",
     label: "Risk / Approval",
     href: "/approvals",
-    why: "Human gate. Code changes, deploys, database access, and incident apply wait here.",
+    why: "Human-in-the-loop. Low = automatic. Medium = review recommended. High / critical = mandatory approval.",
     tone: "warn",
   },
   {

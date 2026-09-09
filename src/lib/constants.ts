@@ -98,6 +98,8 @@ export const STATUS_LABELS: Record<string, string> = {
   disabled: "Disabled",
   awaiting_gateway: "Gateway hold",
   allowed: "Allowed",
+  recommended: "Review recommended",
+  mandatory: "Mandatory approval",
 };
 
 export type GithubCommit = {

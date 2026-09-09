@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { GatewayPipeline } from "@/components/gateway-pipeline";
+import { SecurityGatewayAscii, SecurityGatewayExamples } from "@/components/security-gateway";
 import { SecurityRunForm } from "@/components/security-run-form";
 import { EmptyState, GhostLink, PageHeader, PrimaryLink } from "@/components/ui";
 import { db } from "@/lib/db";
@@ -33,9 +34,20 @@ export default async function SecurityServicePage({
         kicker="Security service"
         title={service.name}
         description={service.description}
-        actions={<GhostLink href="/security">All services</GhostLink>}
+        actions={
+          <>
+            <GhostLink href="/security/gateway">Security Gateway</GhostLink>
+            <GhostLink href="/security">All services</GhostLink>
+          </>
+        }
       />
-      {slug === "security-gateway" ? <div className="mb-6"><GatewayPipeline /></div> : null}
+      {slug === "security-gateway" ? (
+        <div className="mb-6 space-y-6">
+          <SecurityGatewayAscii />
+          <SecurityGatewayExamples />
+          <GatewayPipeline />
+        </div>
+      ) : null}
       <div className="mb-6 flex flex-wrap gap-1.5">
         {service.capabilities.map((cap) => (
           <span

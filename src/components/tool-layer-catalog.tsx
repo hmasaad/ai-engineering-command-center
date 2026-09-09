@@ -18,9 +18,9 @@ export function ToolLayerAscii() {
         </pre>
       </div>
       <div className="overflow-x-auto rounded-xl border border-warn/35 bg-[#070d14] p-5 shadow-[0_0_48px_rgba(232,176,80,0.08)]">
-        <div className="mb-2 font-mono text-[10px] uppercase tracking-[0.22em] text-muted">
-          Path
-        </div>
+          <div className="mb-2 font-mono text-[10px] uppercase tracking-[0.22em] text-muted">
+            Security Gateway
+          </div>
         <pre className="font-mono text-[11px] leading-5 text-warn sm:text-[12px]">
           {TOOL_GATEWAY_ASCII}
         </pre>

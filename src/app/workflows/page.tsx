@@ -22,7 +22,7 @@ export default async function WorkflowsPage() {
       <PageHeader
         kicker="Orchestration"
         title="Workflows"
-        description="A workflow is an ordered chain of specialist capabilities, with optional human gates between steps."
+        description="A workflow is a task graph of specialists — including parallel waves and human gates — not a single unconstrained agent."
         actions={<PrimaryLink href="/workflows/new">Create workflow</PrimaryLink>}
       />
       {workflows.length === 0 ? (

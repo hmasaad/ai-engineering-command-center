@@ -190,6 +190,7 @@ model GatewayEvent {
   status      String
   reasons     String
   detectors   String
+  checks      String   @default("[]")
   summary     String
   createdAt   DateTime  @default(now())
   resolvedAt  DateTime?

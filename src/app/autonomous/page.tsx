@@ -21,7 +21,7 @@ export default async function AutonomousPage() {
       <PageHeader
         kicker="Phase 6"
         title="Autonomous Engineering"
-        description="The developer states a goal. The orchestrator expands it into a task graph — agents, dependencies, risk, and a human gate — then runs it through the registry and the security gateway."
+        description="The developer states a goal. The orchestrator expands it into AI PR Resolution — understand, plan, parallel review, fix, tests, risk, human approval, then Create PR — and runs it through the registry and the security gateway."
         actions={<PrimaryLink href="/observability">Traces</PrimaryLink>}
       />
 
@@ -51,7 +51,7 @@ export default async function AutonomousPage() {
               ))}
             </ul>
             <p className="mt-3 text-xs text-muted">
-              Architecture, PR Reviewer, Security, Test Generation, Regression, Deployment, Monitoring, and Recovery already live in the platform. The intent layer composes them.
+              Architecture, PR Reviewer, Security, QA, Verification, and Developer already live in the platform. AI PR Resolution composes them. Create PR waits for the human gate.
             </p>
           </section>
         </div>
@@ -61,7 +61,7 @@ export default async function AutonomousPage() {
         <h2 className="mb-3 text-sm font-medium">Recent autonomous runs</h2>
         {recent.length === 0 ? (
           <p className="text-sm text-muted">
-          No expanded intents yet. Type “Review this PR and prepare a fix.” and run it.
+          No expanded intents yet. Type “Analyze PR #182, identify problems, fix them, test the fix, and prepare it for review.” and run it.
           </p>
         ) : (
           <ul className="space-y-2">

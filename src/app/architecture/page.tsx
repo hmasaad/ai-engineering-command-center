@@ -1,5 +1,12 @@
 import Link from "next/link";
 import { ControlPlaneAscii } from "@/components/control-plane";
+import { HitlAscii, HitlTable } from "@/components/hitl";
+import {
+  SecurityGatewayAscii,
+  SecurityGatewayChecks,
+  SecurityGatewayExamples,
+} from "@/components/security-gateway";
+import { TaskGraphAscii } from "@/components/task-graph";
 import { GhostLink, PageHeader } from "@/components/ui";
 import { CONTROL_PLANE } from "@/lib/control-plane";
 
@@ -24,8 +31,33 @@ export default function ArchitecturePage() {
       <ControlPlaneAscii />
 
       <p className="mt-3 max-w-3xl text-xs text-muted">
-        Tool execution and agent execution fork in parallel, then rejoin. Side effects — create_pr, CI, deploy, rollback — wait until Verification, Observability, and Risk / Approval have all run. That last node is Execution. Agents never skip the Tool Gateway.
+        Tool execution and agent execution fork in parallel, then rejoin. Low-risk reads, tests, and branches are automatic. Create PR is review recommended. Config changes, deploys, and database deletes are mandatory. Agents never skip the Security Gateway or Human-in-the-loop.
       </p>
+
+      <div className="mt-8 grid gap-6 xl:grid-cols-2">
+        <HitlAscii />
+        <HitlTable />
+      </div>
+
+      <div className="mt-8">
+        <SecurityGatewayAscii />
+        <p className="mt-3 max-w-3xl text-xs text-muted">
+          The gateway is the security boundary around agents. github.read_file can be low and automatic. production_database.delete is critical and waits for a human. Sending customer data to an external API is blocked as exfiltration.
+        </p>
+        <div className="mt-6">
+          <SecurityGatewayExamples />
+        </div>
+        <div className="mt-6">
+          <SecurityGatewayChecks />
+        </div>
+      </div>
+
+      <div className="mt-8">
+        <TaskGraphAscii title="First real workflow — AI PR Resolution" />
+        <p className="mt-3 max-w-3xl text-xs text-muted">
+          That graph is what a user request like “Analyze PR #182, identify problems, fix them, test the fix, and prepare it for review.” expands into. Parallel review joins before Generate Fix. Create PR is after Human Approval.
+        </p>
+      </div>
 
       <div className="mt-8 space-y-3">
         {before.map((layer) => (

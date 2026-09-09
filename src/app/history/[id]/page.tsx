@@ -7,6 +7,7 @@ import { GhostLink, PageHeader, StatusBadge } from "@/components/ui";
 import { db } from "@/lib/db";
 import { formatDuration, formatUsd, hydrateMissingSpans } from "@/lib/observability";
 import type { DetectorHit } from "@/lib/security";
+import type { GatewayCheck } from "@/lib/security-gateway";
 import { formatDateTime, parseJson } from "@/lib/utils";
 
 export default async function ExecutionDetailPage({
@@ -34,6 +35,9 @@ export default async function ExecutionDetailPage({
     .flatMap((step) => step.approvals)
     .find((approval) => approval.status === "pending");
   const latestGateway = execution.gatewayEvents.at(-1);
+  const latestChecks = latestGateway
+    ? parseJson<GatewayCheck[]>(latestGateway.checks, [])
+    : [];
 
   return (
     <div>
@@ -60,9 +64,11 @@ export default async function ExecutionDetailPage({
       {pending ? (
         <section className="mb-6 rounded-xl border border-warn/30 bg-panel/80 p-5">
           <h2 className="text-sm font-medium text-warn">
-            {pending.kind === "gateway"
-              ? "Gateway hold — human approval required"
-              : "Human approval required"}
+            {pending.kind === "recommended"
+              ? "Review recommended"
+              : pending.kind === "mandatory" || pending.kind === "gateway"
+                ? "Mandatory approval"
+                : "Human approval required"}
           </h2>
           <p className="mt-1 text-sm text-muted">{pending.summary}</p>
           <div className="mt-4">
@@ -77,6 +83,7 @@ export default async function ExecutionDetailPage({
             verdict={latestGateway.verdict}
             riskScore={latestGateway.riskScore}
             toolName={latestGateway.toolName}
+            checks={latestChecks}
           />
         </div>
       ) : null}
@@ -128,6 +135,7 @@ export default async function ExecutionDetailPage({
                   </div>
                   {step.gatewayEvents.map((event) => {
                     const detectors = parseJson<DetectorHit[]>(event.detectors, []);
+                    const checks = parseJson<GatewayCheck[]>(event.checks, []);
                     return (
                       <div key={event.id} className="text-xs">
                         <div className="flex flex-wrap items-center gap-2">
@@ -144,7 +152,30 @@ export default async function ExecutionDetailPage({
                             {event.phase} · {event.toolName} · risk {event.riskScore}
                           </span>
                         </div>
-                        {detectors.length > 0 ? (
+                        {checks.length > 0 ? (
+                          <ol className="mt-2 space-y-1 text-muted">
+                            {checks.map((item) => (
+                              <li key={`${event.id}-${item.id}`}>
+                                <span
+                                  className={
+                                    item.status === "fail"
+                                      ? "text-danger"
+                                      : item.status === "hold"
+                                        ? "text-warn"
+                                        : "text-live"
+                                  }
+                                >
+                                  {item.status === "fail"
+                                    ? "BLOCK"
+                                    : item.status === "hold"
+                                      ? "HOLD"
+                                      : "PASS"}
+                                </span>{" "}
+                                {item.id}. {item.question}
+                              </li>
+                            ))}
+                          </ol>
+                        ) : detectors.length > 0 ? (
                           <ul className="mt-1 list-disc pl-4 text-muted">
                             {detectors.slice(0, 4).map((hit) => (
                               <li key={`${event.id}-${hit.detail}`}>{hit.name}: {hit.detail}</li>

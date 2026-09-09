@@ -1,5 +1,5 @@
 import type { PlaybookDef, ServiceDef } from "@/lib/development";
-import { PR_FIX_PLAYBOOK } from "@/lib/orchestrator/graph";
+import { PR_RESOLUTION_NAME, PR_RESOLUTION_PLAYBOOK } from "@/lib/orchestrator/graph";
 
 export const AUTONOMOUS_SERVICES: ServiceDef[] = [
   {
@@ -81,7 +81,7 @@ export const RELEASE_FLOW: Array<{
 ];
 
 export const AUTONOMOUS_PLAYBOOKS: PlaybookDef[] = [
-  PR_FIX_PLAYBOOK,
+  PR_RESOLUTION_PLAYBOOK,
   {
     name: "Release",
     domain: "autonomous",
@@ -178,6 +178,12 @@ export const AUTONOMOUS_PLAYBOOKS: PlaybookDef[] = [
 
 export const INTENT_EXAMPLES = [
   {
+    id: "pr-resolution",
+    label: "Analyze PR #182",
+    intent:
+      "Analyze PR #182, identify problems, fix them, test the fix, and prepare it for review.",
+  },
+  {
     id: "pr-fix",
     label: "Review this PR and prepare a fix",
     intent: "Review this PR and prepare a fix.",
@@ -251,30 +257,36 @@ export function parseEngineeringIntent(raw: string): EngineeringIntent | null {
   }
 
   if (
-    /\bpull request\b|\bpr\b/.test(lower) &&
-    /\bfix\b|\bbug\b|\breview\b/.test(lower)
+    (/\bpull request\b|\bpr\b/.test(lower) || extractPrNumber(text)) &&
+    /\bfix\b|\bbug\b|\breview\b|\banalyze\b|\bproblems?\b|\btest\b|\bresolv/.test(lower)
   ) {
     const pr = extractPrNumber(text);
+    const title =
+      text.length <= 90
+        ? text.replace(/\.$/, "")
+        : pr
+          ? `Analyze PR #${pr} and prepare a fix`
+          : "Analyze PR and prepare a fix";
     return {
       id: "pr_fix",
-      playbookName: "PR fix",
+      playbookName: PR_RESOLUTION_NAME,
       version: null,
-      title: text.length <= 90 ? text.replace(/\.$/, "") : "Review PR and prepare a fix",
-      description: `The orchestrator expanded “${text}” into a task graph. Specialists were not assigned by the developer.
+      title,
+      description: `The orchestrator expanded “${text}” into the AI PR Resolution workflow. Specialists were not assigned by the developer.
 
-1. Analyze PR
-2. Security Review
-3. Bug Analysis
-4. Generate Fix
-5. Run Tests
-6. Review Fix
-7. Human Approval
+User request → Orchestrator → Understand Intent → Create Plan
+→ Code Review ∥ Security ∥ Bug Analysis
+→ Developer / Generate Fix
+→ QA / Run Tests
+→ Verification / Risk Analysis
+→ Human Approval
+→ Create PR
 
-Each node has an agent, input, dependencies, status, output, tools, risk, and a human gate at the end.
+Each node has an agent, input, dependencies, status, output, tools, and risk. Create PR waits for the human gate.
 
 Operator intent:
 ${text}`,
-      confidence: 0.93,
+      confidence: 0.95,
       focusKind: pr ? "pr" : null,
       focusRef: pr,
     };

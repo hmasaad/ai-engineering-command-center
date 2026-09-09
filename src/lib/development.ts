@@ -197,6 +197,23 @@ export const PLATFORM_SERVICES: ServiceDef[] = [
     requiresApproval: true,
     taskType: "review",
   },
+  {
+    slug: "verification",
+    role: "verification",
+    name: "Verification Agent",
+    domain: "development",
+    description:
+      "Joins the proposed fix and test evidence, scores residual merge risk, and writes a go / no-go for the human gate.",
+    capabilities: ["Evidence check", "Residual risk", "Go / no-go", "Merge readiness"],
+    tools: ["artifact.write", "github.read_file", "ci.run_tests"],
+    permissions: ["write_artifact", "read_repository", "run_ci"],
+    riskLevel: "medium",
+    systemPrompt:
+      "You are the Verification Agent of the AI Engineering Command Center. Confirm the fix is testable and name residual risk. You do not merge, deploy, or skip the human gate.",
+    defaultAction: "verify",
+    requiresApproval: false,
+    taskType: "review",
+  },
 ];
 
 export const ALL_SERVICES = [...DEVELOPMENT_SERVICES, ...PLATFORM_SERVICES];

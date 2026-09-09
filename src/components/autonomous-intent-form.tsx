@@ -19,7 +19,9 @@ export function AutonomousIntentForm({
 }) {
   const [error, setError] = useState<string | null>(null);
   const [projectId, setProjectId] = useState(projects[0]?.id || "");
-  const [intent, setIntent] = useState("Review this PR and prepare a fix.");
+  const [intent, setIntent] = useState(
+    "Analyze PR #182, identify problems, fix them, test the fix, and prepare it for review.",
+  );
   const parsed = useMemo(() => parseEngineeringIntent(intent), [intent]);
 
   if (projects.length === 0) {
@@ -50,7 +52,7 @@ export function AutonomousIntentForm({
           required
           value={intent}
           onChange={(event) => setIntent(event.target.value)}
-          placeholder="Review this PR and prepare a fix."
+          placeholder="Analyze PR #182, identify problems, fix them, test the fix, and prepare it for review."
           className={fieldClass}
         />
       </Field>
@@ -125,7 +127,7 @@ export function AutonomousIntentForm({
         </div>
       ) : (
         <p className="text-sm text-muted">
-          Type a goal such as “Review this PR and prepare a fix.” Command Center will expand it into a task graph.
+          Type a goal such as “Analyze PR #182, identify problems, fix them, test the fix, and prepare it for review.” Command Center will expand it into AI PR Resolution.
         </p>
       )}
 

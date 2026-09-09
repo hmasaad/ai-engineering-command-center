@@ -24,6 +24,8 @@ const styles: Record<string, string> = {
   high: "bg-warn/15 text-warn",
   medium: "bg-info/15 text-info",
   low: "bg-muted/15 text-muted",
+  recommended: "bg-warn/15 text-warn",
+  mandatory: "bg-danger/15 text-danger",
 };
 
 export function StatusBadge({

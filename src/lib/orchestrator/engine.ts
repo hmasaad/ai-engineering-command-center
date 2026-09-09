@@ -14,9 +14,25 @@ import {
 import {
   materializeTaskGraph,
   mirrorGraphTask,
+  readyGraphTasks,
   refreshGraphInput,
 } from "@/lib/orchestrator/graph";
+import {
+  approvalKindFor,
+  hitlLabel,
+  isExplicitHumanGate,
+} from "@/lib/hitl";
 import { parseJson } from "@/lib/utils";
+
+function priorHumanGateApproved(
+  steps: Array<{ name: string; status: string; approvals?: Array<{ status: string }> }>,
+) {
+  return steps.some((step) => {
+    if (!isExplicitHumanGate({ name: step.name, action: "review" })) return false;
+    if (step.status === "completed") return true;
+    return (step.approvals || []).some((row) => row.status === "approved");
+  });
+}
 
 async function addEvent(
   executionId: string,
@@ -128,19 +144,31 @@ function gatewayArtifact(decision: GatewayDecision) {
           .map((hit) => `- **${hit.name}** (+${hit.score}) — ${hit.detail}`)
           .join("\n")
       : "- No detector hits.";
+  const checks = (decision.checks || [])
+    .map((item) => {
+      const mark = item.status === "fail" ? "BLOCK" : item.status === "hold" ? "HOLD" : "PASS";
+      return `${item.id}. **${item.question}** \`${mark}\` — ${item.detail}`;
+    })
+    .join("\n");
   const next =
     decision.verdict === "deny"
       ? "The specialist did not run. This tool request is denied."
-      : "The specialist has not run yet. Approve to allow this tool request; reject to halt the execution.";
+      : decision.hitl.mode === "mandatory"
+        ? "Mandatory approval. The specialist has not run yet. Approve to allow this tool request; reject to halt."
+        : "Review recommended. The specialist has not run yet. Approve to continue; reject to halt.";
   return `# Agent Security Gateway
 
-Agent → Tool Request → Tool Gateway → Policy Engine → Allow / Deny / Approval
+Agent → Tool Request → Security Gateway → Allow / Deny / Human Approval
 
 **Phase:** ${decision.phase}
 **Tool request:** \`${decision.tool.name}\` / ${decision.tool.action}
+**HITL:** ${decision.hitl.band} · ${hitlLabel(decision.hitl)}
 **Permission:** ${decision.permissionMode}
 **Risk score:** ${decision.riskScore}
 **Verdict:** ${decision.verdict}
+
+## Checks
+${checks || "- Checks were not recorded on this event."}
 
 ## Policy evaluation
 ${decision.reasons.map((reason) => `- ${reason}`).join("\n")}
@@ -179,6 +207,7 @@ async function persistGatewayEvent(input: {
       status,
       reasons: JSON.stringify(input.decision.reasons),
       detectors: JSON.stringify(input.decision.detectors),
+      checks: JSON.stringify(input.decision.checks || []),
       summary: input.decision.summary,
     },
   });
@@ -238,9 +267,9 @@ async function holdForGateway(input: {
       executionId: input.executionId,
       stepId: input.stepId,
       gatewayEventId: input.eventId,
-      kind: "gateway",
+      kind: approvalKindFor(input.decision.hitl),
       status: "pending",
-      summary: `Gateway hold after ${input.agentName} requested \`${input.decision.tool.name}\` (risk ${input.decision.riskScore}). ${input.decision.reasons[0] || ""}`,
+      summary: `HITL ${hitlLabel(input.decision.hitl).toLowerCase()} — ${input.agentName} requested \`${input.decision.tool.name}\` (${input.decision.hitl.band} risk). ${input.decision.reasons[0] || ""}`,
     },
   });
   await db.execution.update({
@@ -254,7 +283,7 @@ async function holdForGateway(input: {
   await addEvent(
     input.executionId,
     "gateway_hold",
-    `Agent Security Gateway paused “${input.stepName}” for a human (risk ${input.decision.riskScore}).`,
+    `HITL ${hitlLabel(input.decision.hitl).toLowerCase()} paused “${input.stepName}” (${input.decision.tool.name}, ${input.decision.hitl.band}).`,
   );
   await mirrorGraphTask(input.stepId);
 }
@@ -312,14 +341,14 @@ export async function runUntilPause(executionId: string) {
       const deps = parseJson<string[]>(self?.dependencies ?? graphTask.dependencies, []);
       const depRows = latest.filter((row) => deps.includes(row.id));
       if (depRows.some((row) => ["awaiting_approval", "awaiting_gateway"].includes(row.status))) {
-        return { executionId, status: "awaiting_approval" as const };
+        continue;
       }
       if (depRows.some((row) => row.status === "denied" || row.status === "failed")) {
         const halted = depRows.find((row) => row.status === "denied" || row.status === "failed");
         return { executionId, status: (halted?.status ?? "failed") as "denied" | "failed" };
       }
       if (depRows.some((row) => row.status !== "completed")) {
-        return { executionId, status: execution.status };
+        continue;
       }
       await refreshGraphInput(
         self ?? graphTask,
@@ -341,9 +370,7 @@ export async function runUntilPause(executionId: string) {
       return { executionId, status: "awaiting_approval" as const };
     }
     if (existing?.status === "awaiting_gateway") {
-      const pending = existing.approvals.find(
-        (approval) => approval.status === "pending" && approval.kind === "gateway",
-      );
+      const pending = existing.approvals.find((approval) => approval.status === "pending");
       if (pending) {
         return { executionId, status: "awaiting_approval" as const };
       }
@@ -441,7 +468,7 @@ export async function runUntilPause(executionId: string) {
       await addEvent(
         executionId,
         "gateway_eval",
-        `Tool Gateway ${pre.decision.verdict} · ${pre.decision.tool.name} · risk ${pre.decision.riskScore}.`,
+        `Security Gateway ${pre.decision.verdict} · ${pre.decision.tool.name} · risk ${pre.decision.riskScore}.`,
         {
           phase: "preflight",
           tools: pre.tools,
@@ -466,6 +493,20 @@ export async function runUntilPause(executionId: string) {
       }
 
       if (pre.decision.verdict === "human") {
+        if (
+          pre.decision.hitl.mode === "recommended" &&
+          priorHumanGateApproved(execution.steps)
+        ) {
+          await db.gatewayEvent.update({
+            where: { id: preEvent.id },
+            data: { verdict: "allow", status: "allowed", summary: `${pre.decision.summary} · human gate already cleared` },
+          });
+          await addEvent(
+            executionId,
+            "gateway_eval",
+            `HITL review recommended skipped — Human Approval already cleared (${pre.decision.tool.name}).`,
+          );
+        } else {
         await holdForGateway({
           executionId,
           taskId: execution.taskId,
@@ -480,6 +521,7 @@ export async function runUntilPause(executionId: string) {
           risk: pre.decision.riskScore,
         });
         return { executionId, status: "awaiting_approval" as const };
+        }
       }
     }
 
@@ -516,7 +558,7 @@ export async function runUntilPause(executionId: string) {
       await addEvent(
         executionId,
         "gateway_eval",
-        `Tool Gateway postflight ${post.decision.verdict} · ${post.decision.tool.name} · risk ${post.decision.riskScore}.`,
+        `Security Gateway postflight ${post.decision.verdict} · ${post.decision.tool.name} · risk ${post.decision.riskScore}.`,
         {
           phase: "postflight",
           verdict: post.decision.verdict,
@@ -540,6 +582,24 @@ export async function runUntilPause(executionId: string) {
       }
 
       if (post.decision.verdict === "human") {
+        if (
+          post.decision.hitl.mode === "recommended" &&
+          priorHumanGateApproved(execution.steps)
+        ) {
+          await db.gatewayEvent.update({
+            where: { id: postEvent.id },
+            data: {
+              verdict: "allow",
+              status: "allowed",
+              summary: `${post.decision.summary} · human gate already cleared`,
+            },
+          });
+          await addEvent(
+            executionId,
+            "gateway_eval",
+            `HITL review recommended skipped — Human Approval already cleared (${post.decision.tool.name}).`,
+          );
+        } else {
         await db.executionStep.update({
           where: { id: step.id },
           data: { status: "awaiting_gateway", output },
@@ -549,9 +609,9 @@ export async function runUntilPause(executionId: string) {
             executionId,
             stepId: step.id,
             gatewayEventId: postEvent.id,
-            kind: "gateway",
+            kind: approvalKindFor(post.decision.hitl),
             status: "pending",
-            summary: `Gateway postflight hold for ${workflowStep.agent.name} (risk ${post.decision.riskScore}). Artifact is held until a human allows it.`,
+            summary: `HITL ${hitlLabel(post.decision.hitl).toLowerCase()} after ${workflowStep.agent.name} (${post.decision.hitl.action}, ${post.decision.hitl.band} risk). Artifact is held until a human ${post.decision.hitl.mode === "mandatory" ? "approves" : "reviews"}.`,
           },
         });
         await db.execution.update({
@@ -573,10 +633,11 @@ export async function runUntilPause(executionId: string) {
         });
         await mirrorGraphTask(step.id);
         return { executionId, status: "awaiting_approval" as const };
+        }
       }
     }
 
-    if (workflowStep.requiresApproval) {
+    if (isExplicitHumanGate(workflowStep)) {
       await db.executionStep.update({
         where: { id: step.id },
         data: { status: "awaiting_approval", output },
@@ -585,9 +646,9 @@ export async function runUntilPause(executionId: string) {
         data: {
           executionId,
           stepId: step.id,
-          kind: "workflow",
+          kind: "mandatory",
           status: "pending",
-          summary: `${workflowStep.agent.name} finished “${workflowStep.name}” and is waiting for a human gate.`,
+          summary: `${workflowStep.agent.name} finished “${workflowStep.name}”. Mandatory human approval before the run continues.`,
         },
       });
       await db.execution.update({
@@ -601,7 +662,7 @@ export async function runUntilPause(executionId: string) {
       await addEvent(
         executionId,
         "approval_requested",
-        `Human approval required after ${workflowStep.agent.name}.`,
+        `HITL mandatory approval after ${workflowStep.agent.name}.`,
       );
       await trace("awaiting_approval", { output });
       await mirrorGraphTask(step.id);
@@ -620,6 +681,23 @@ export async function runUntilPause(executionId: string) {
       `${workflowStep.agent.name} completed “${workflowStep.name}”.`,
     );
     await trace("completed", { output });
+  }
+
+  const remaining = await db.graphTask.findMany({ where: { executionId } });
+  if (remaining.length > 0) {
+    if (remaining.some((node) => ["awaiting_approval", "awaiting_gateway"].includes(node.status))) {
+      return { executionId, status: "awaiting_approval" as const };
+    }
+    if (remaining.some((node) => node.status === "denied" || node.status === "failed")) {
+      const halted = remaining.find((node) => node.status === "denied" || node.status === "failed");
+      return { executionId, status: (halted?.status ?? "failed") as "denied" | "failed" };
+    }
+    if (readyGraphTasks(remaining).length > 0) {
+      return runUntilPause(executionId);
+    }
+    if (remaining.some((node) => node.status === "pending" || node.status === "running")) {
+      return { executionId, status: "running" as const };
+    }
   }
 
   await db.execution.update({
@@ -706,7 +784,7 @@ export async function resolveApproval(
     return { executionId: approval.executionId, status: "failed" as const };
   }
 
-  if (approval.kind === "gateway") {
+  if (approval.gatewayEventId) {
     await addEvent(
       approval.executionId,
       "gateway_approved",
