@@ -8,14 +8,21 @@ import {
   PrimaryLink,
   StatusBadge,
 } from "@/components/ui";
+import {
+  FeedbackLoopAscii,
+  FeedbackLoopLive,
+  FeedbackLoopWalkAscii,
+} from "@/components/feedback-loop";
 import { getCommandCenterBoard } from "@/lib/observability";
 import { getCommandCenterData } from "@/lib/queries";
+import { getFeedbackLoopLive } from "@/lib/feedback-loop";
 import { formatRelative } from "@/lib/utils";
 
 export default async function CommandCenterPage() {
-  const [data, board] = await Promise.all([
+  const [data, board, loop] = await Promise.all([
     getCommandCenterData(),
     getCommandCenterBoard(),
+    getFeedbackLoopLive(),
   ]);
 
   return (
@@ -23,7 +30,7 @@ export default async function CommandCenterPage() {
       <PageHeader
         kicker="Observability"
         title="Command Center"
-        description="Every agent action is an event — workflow, agent, tool, risk, duration, tokens, status. The board is that stream, not a chatbot log."
+        description="Observability, the Security Gateway, incident response, and agent execution are one loop around the orchestrator — not four products."
         actions={
           <>
             <RefreshButton />
@@ -38,6 +45,22 @@ export default async function CommandCenterPage() {
         approvals={board.approvals}
         metrics={board.metrics}
       />
+
+      <div className="mt-6 grid gap-3 lg:grid-cols-2">
+        <FeedbackLoopAscii />
+        <div className="space-y-3">
+          <FeedbackLoopWalkAscii />
+          {loop ? (
+            <FeedbackLoopLive
+              title={loop.title}
+              status={loop.status}
+              href={loop.href}
+              historyHref={loop.historyHref}
+              stages={loop.stages}
+            />
+          ) : null}
+        </div>
+      </div>
 
       <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
         <ArchitectureMap
@@ -97,7 +120,7 @@ export default async function CommandCenterPage() {
             </Link>
           </div>
           <p className="mb-3 text-sm text-muted">
-            Production alert → incident → logs → deploy inspect → RCA → fix → QA → security gate → deploy → monitor → recovery.
+            Production alert → incident agent → evidence → analyze → RCA → remediation → security → fix → test → human approval → deploy → monitor.
           </p>
           <PrimaryLink href="/operations">Run a production alert</PrimaryLink>
         </section>
@@ -121,7 +144,7 @@ export default async function CommandCenterPage() {
             </Link>
           </div>
           <p className="mb-3 text-sm text-muted">
-            “Prepare release 2.4.0” expands into analyze, notes, review, security, tests, build, a human gate, deploy, monitor, and verify.
+            “Prepare release 2.4.0” expands into a workflow. Low-risk steps run automatically. Medium waits for approval. High is mandatory human — not unconstrained execution.
           </p>
           <PrimaryLink href="/autonomous">Prepare a release</PrimaryLink>
         </section>

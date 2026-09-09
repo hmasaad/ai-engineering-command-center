@@ -1,12 +1,20 @@
 import Link from "next/link";
 import { AutonomousIntentForm } from "@/components/autonomous-intent-form";
-import { EmptyState, PageHeader, PrimaryLink, StatusBadge } from "@/components/ui";
+import {
+  AutonomyControlledAscii,
+  AutonomyExampleCards,
+  AutonomyInitialAscii,
+  AutonomyLedger,
+  AutonomyUnsafeAscii,
+} from "@/components/autonomous-execution";
+import { EmptyState, GhostLink, PageHeader, PrimaryLink, StatusBadge } from "@/components/ui";
 import { db } from "@/lib/db";
 import { AUTONOMOUS_SERVICES } from "@/lib/autonomous";
+import { getAutonomyLedger } from "@/lib/autonomous-execution";
 import { formatRelative } from "@/lib/utils";
 
 export default async function AutonomousPage() {
-  const [projects, recent] = await Promise.all([
+  const [projects, recent, ledger] = await Promise.all([
     db.project.findMany({ orderBy: { name: "asc" } }),
     db.execution.findMany({
       where: { workflow: { domain: "autonomous" } },
@@ -14,16 +22,41 @@ export default async function AutonomousPage() {
       take: 8,
       include: { project: true, task: true, workflow: true },
     }),
+    getAutonomyLedger(),
   ]);
 
   return (
     <div>
       <PageHeader
         kicker="Phase 6"
-        title="Autonomous Engineering"
-        description="The developer states a goal. The orchestrator expands it into AI PR Resolution — understand, plan, parallel review, fix, tests, risk, human approval, then Create PR — and runs it through the registry and the security gateway."
-        actions={<PrimaryLink href="/observability">Traces</PrimaryLink>}
+        title="Autonomous Execution"
+        description="The first version always waits: AI suggests, a human approves, the system executes. Later, controlled autonomy — detect, investigate, plan, risk evaluation — then low is automatic, medium is approval, high is mandatory human. Never let the AI do everything."
+        actions={
+          <>
+            <GhostLink href="/approvals">HITL queue</GhostLink>
+            <PrimaryLink href="/observability">Traces</PrimaryLink>
+          </>
+        }
       />
+
+      <div className="mb-8 grid gap-3 lg:grid-cols-2">
+        <AutonomyInitialAscii />
+        <AutonomyControlledAscii />
+      </div>
+      <div className="mb-8">
+        <AutonomyUnsafeAscii />
+      </div>
+      <div className="mb-8">
+        <AutonomyExampleCards />
+      </div>
+      <div className="mb-8">
+        <AutonomyLedger
+          automatic={ledger.automatic}
+          approval={ledger.approval}
+          mandatory={ledger.mandatory}
+          pending={ledger.pending}
+        />
+      </div>
 
       <div className="mb-8 grid gap-6 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]">
         {projects.length === 0 ? (

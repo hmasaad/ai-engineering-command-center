@@ -60,7 +60,7 @@ export const CONTROL_PLANE: ControlPlaneLayer[] = [
     id: "observability",
     label: "Observability",
     href: "/observability",
-    why: "Every action is an event: workflow, agent, tool, risk, duration, tokens, status. You cannot approve what you cannot see.",
+    why: "Security asks whether an action should be allowed. Observability asks what the system did: which agent, which tools, what the model received, tokens, cost, duration, and the gateway decision.",
     tone: "live",
   },
   {
@@ -74,7 +74,7 @@ export const CONTROL_PLANE: ControlPlaneLayer[] = [
     id: "execution",
     label: "Execution",
     href: "/history",
-    why: "Side effects only after policy, verification, observability, and a human: deploy, rollback, patch.",
+    why: "Side effects only after risk evaluation. Low runs automatically. Medium waits for approval. High is mandatory human. Never “let the AI do everything.”",
     tone: "live",
   },
 ];

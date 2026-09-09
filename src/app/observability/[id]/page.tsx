@@ -1,8 +1,10 @@
 import { notFound } from "next/navigation";
 import { ActionEventJson } from "@/components/command-center-board";
+import { DebugTimelineView } from "@/components/debug-timeline";
 import { SpanTree } from "@/components/span-tree";
 import { GhostLink, PageHeader, StatusBadge } from "@/components/ui";
 import { parseActionEvent, toActionEvent } from "@/lib/action-event";
+import { buildDebugTimeline } from "@/lib/debug-log";
 import {
   formatDuration,
   formatUsd,
@@ -63,6 +65,10 @@ export default async function ObservabilityTracePage({
         <span>started {formatDateTime(execution.startedAt)}</span>
       </div>
 
+      <div className="mb-6">
+        <DebugTimelineView timeline={buildDebugTimeline(execution)} />
+      </div>
+
       <section className="mb-6 rounded-xl border border-line bg-panel/80 p-5">
         <h2 className="mb-3 font-mono text-[10px] uppercase tracking-[0.18em] text-muted">
           Action events
@@ -80,7 +86,7 @@ export default async function ObservabilityTracePage({
 
       <section className="rounded-xl border border-line bg-panel/80 p-5">
         <h2 className="mb-4 font-mono text-[10px] uppercase tracking-[0.18em] text-muted">
-          Workflow · Agent · Input · Context · Tools · Output · Tokens · Cost · Duration · Risk · Result
+          Workflow · Agent execution (input, context, model, prompt, output, tokens, cost, duration) · Tool execution (tool, arguments, result, risk, decision) · Final result
         </h2>
         <SpanTree
           workflowName={execution.workflow.name}

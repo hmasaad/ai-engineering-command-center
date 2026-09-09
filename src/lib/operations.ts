@@ -121,26 +121,85 @@ export const PRODUCTION_ALERT_FLOW: Array<{
   gate?: boolean;
 }> = [
   { label: "Production Alert", agent: "monitoring" },
-  { label: "Incident Agent", agent: "incident-response" },
-  { label: "Analyze Logs", agent: "log-analysis" },
-  { label: "Check Deployment", agent: "deployment" },
-  { label: "Find Suspicious Commit", agent: "root-cause" },
-  { label: "Bug Investigation", agent: "bug-investigation" },
-  { label: "Generate Fix", agent: "developer" },
-  { label: "QA", agent: "qa" },
-  { label: "Security", agent: "security" },
+  { label: "Incident Response Agent", agent: "incident-response" },
+  { label: "Collect Evidence", agent: "log-analysis" },
+  { label: "Analyze", agent: "performance" },
+  { label: "Find Root Cause", agent: "root-cause" },
+  { label: "Generate Remediation Plan", agent: "architect" },
+  { label: "Security Review", agent: "security" },
+  { label: "Fix", agent: "developer" },
+  { label: "Test", agent: "qa" },
   { label: "Human Approval", agent: "security", gate: true },
   { label: "Deploy", agent: "deployment" },
   { label: "Monitor", agent: "monitoring" },
-  { label: "Verify Resolution", agent: "recovery" },
-] ;
+];
+
+export const INCIDENT_RESPONSE_ASCII = `Production Alert
+       ↓
+Incident Response Agent
+       ↓
+Collect Evidence
+       ↓
+Analyze
+       ↓
+Find Root Cause
+       ↓
+Generate Remediation Plan
+       ↓
+Security Review
+       ↓
+Fix
+       ↓
+Test
+       ↓
+Human Approval
+       ↓
+Deploy
+       ↓
+Monitor`;
+
+export const INCIDENT_EVIDENCE_ASCII = `Incident Agent
+     │
+     ├── Check logs
+     ├── Check metrics
+     ├── Check traces
+     ├── Check deployments
+     ├── Check Git commits
+     └── Check recent configuration`;
+
+export const INCIDENT_CAUSE_ASCII = `Deployment 2.8.1
+        ↓
+New database query
+        ↓
+Missing index
+        ↓
+Query latency ↑
+        ↓
+Connection pool exhausted
+        ↓
+500 errors`;
+
+export const INCIDENT_RCA_ASCII = `Root Cause:
+Missing DB index introduced in commit abc123.
+
+Impact:
+32% of API requests affected.
+
+Recommended Fix:
+Add index to users.email.
+
+Risk:
+Medium.
+
+Confidence:
+94%.`;
 
 export const OPERATIONS_PLAYBOOKS: PlaybookDef[] = [
   {
     name: "Production alert",
     domain: "operations",
     description:
-      "Alert → incident → logs → live revision → suspect commit → bug investigation → fix → QA → security gate → deploy → monitor → recovery.",
+      "Alert → incident agent → collect evidence → analyze → RCA → remediation plan → security review → fix → test → human approval → deploy → monitor.",
     steps: [
       {
         agent: "monitoring",
@@ -151,36 +210,50 @@ export const OPERATIONS_PLAYBOOKS: PlaybookDef[] = [
       },
       {
         agent: "incident-response",
-        name: "Triage and contain",
+        name: "Incident Response Agent",
         action: "triage",
         requiresApproval: false,
-        instruction: "Contain customer impact before a perfect root cause.",
+        instruction:
+          "Contain first. Snapshot logs, metrics, traces, deployments, git commits, and recent configuration.",
       },
       {
         agent: "log-analysis",
-        name: "Analyze logs",
+        name: "Collect evidence",
         action: "analyze",
         requiresApproval: false,
+        instruction:
+          "Check logs, metrics, traces, deployments, git commits, and recent configuration. Quote facts. Do not invent stack frames.",
       },
       {
-        agent: "deployment",
-        name: "Check current deployment",
-        action: "inspect",
+        agent: "performance",
+        name: "Analyze",
+        action: "analyze",
         requiresApproval: false,
-        instruction: "Report what is live. Do not apply a new revision.",
+        instruction:
+          "Read error rate, latency, and database connections against the deploy marker.",
       },
       {
         agent: "root-cause",
-        name: "Find suspicious commit",
+        name: "Find root cause",
         action: "investigate",
         requiresApproval: false,
-        instruction: "Rank recent GitHub commits against the log window.",
+        instruction:
+          "Produce a structured RCA: Root Cause, Impact, Recommended Fix, Risk, Confidence. Rank a real GitHub snapshot commit.",
       },
       {
-        agent: "bug-investigation",
-        name: "Investigate the bug",
-        action: "investigate",
+        agent: "architect",
+        name: "Generate remediation plan",
+        action: "plan",
         requiresApproval: false,
+        instruction:
+          "Turn the RCA into a bounded remediation plan for the Developer Agent. Do not apply a patch.",
+      },
+      {
+        agent: "security",
+        name: "Security review",
+        action: "audit",
+        requiresApproval: false,
+        instruction: "Review the remediation plan before a patch is generated.",
       },
       {
         agent: "developer",
@@ -191,16 +264,16 @@ export const OPERATIONS_PLAYBOOKS: PlaybookDef[] = [
       },
       {
         agent: "qa",
-        name: "Verify the fix",
+        name: "Test the fix",
         action: "test",
         requiresApproval: false,
       },
       {
         agent: "security",
-        name: "Security review",
-        action: "audit",
+        name: "Human Approval",
+        action: "approve",
         requiresApproval: true,
-        instruction: "Human gate before deploy. The gateway still sits in front of deploy.apply.",
+        instruction: "Mandatory human gate before Deploy. Production apply still waits on this approval.",
       },
       {
         agent: "deployment",
@@ -213,12 +286,6 @@ export const OPERATIONS_PLAYBOOKS: PlaybookDef[] = [
         agent: "monitoring",
         name: "Watch the window",
         action: "monitor",
-        requiresApproval: false,
-      },
-      {
-        agent: "recovery",
-        name: "Verify resolution",
-        action: "verify",
         requiresApproval: false,
       },
     ],
@@ -322,6 +389,13 @@ export const OPERATIONS_PLAYBOOKS: PlaybookDef[] = [
 ];
 
 export const ALERT_EXAMPLES = [
+  {
+    id: "9821",
+    label: "INCIDENT #9821",
+    title: "INCIDENT #9821: API error rate 18% after 2.8.1",
+    description:
+      "INCIDENT #9821. Five minutes after deploying Version 2.8.1: 500 errors ↑, latency ↑, database connections ↑. API Error Rate 18% (SLO 0.5%). Status: CRITICAL. User lookup path is saturated. Hypothesis: a new database query is missing an index on users.email, exhausting the connection pool. Collect evidence: logs, metrics, traces, deployments, git commits, recent configuration. Rank the GitHub snapshot commit that introduced the query. Recommended fix after RCA: add the index. Developer Agent implements only after Security Review and Human Approval.",
+  },
   {
     id: "5xx",
     label: "5xx after deploy",

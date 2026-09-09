@@ -1,4 +1,11 @@
 import Link from "next/link";
+import {
+  IncidentCard,
+  IncidentCauseAscii,
+  IncidentEvidenceAscii,
+  IncidentResponseAscii,
+} from "@/components/incident-response";
+import { FeedbackLoopWalkAscii } from "@/components/feedback-loop";
 import { OperationsRunForm } from "@/components/operations-run-form";
 import { ProductionAlertFlow } from "@/components/production-alert-flow";
 import { EmptyState, PageHeader, PrimaryLink, StatusBadge } from "@/components/ui";
@@ -33,12 +40,28 @@ export default async function OperationsPage() {
       <PageHeader
         kicker="Phase 4"
         title="Operations"
-        description="Monitoring, incident, logs, RCA, deploy, rollback, performance, and recovery are Command Center services. A production alert still pauses at human approval before deploy — and every tool request still hits the security gateway."
+        description="A production 500 spike starts a workflow: incident agent, collect evidence, analyze, root cause, remediation plan, security review, fix, test, human approval, deploy, monitor. Every tool request still hits the Security Gateway."
         actions={<PrimaryLink href="/workflows">Playbooks</PrimaryLink>}
       />
 
       <div className="mb-8 grid gap-6 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
-        <ProductionAlertFlow />
+        <IncidentResponseAscii />
+        <IncidentCard />
+      </div>
+
+      <div className="mb-8">
+        <FeedbackLoopWalkAscii />
+      </div>
+
+      <div className="mb-8">
+        <IncidentCauseAscii />
+      </div>
+
+      <div className="mb-8 grid gap-6 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+        <div className="space-y-6">
+          <ProductionAlertFlow />
+          <IncidentEvidenceAscii />
+        </div>
         <div className="rounded-xl border border-line bg-panel/80 p-5">
           <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted">
             Operations
@@ -89,18 +112,23 @@ export default async function OperationsPage() {
             <ul className="space-y-2">
               {recent.map((execution) => (
                 <li key={execution.id}>
-                  <Link
-                    href={`/history/${execution.id}`}
-                    className="flex items-center justify-between gap-2 rounded-lg border border-line bg-background px-3 py-2 text-sm hover:border-live/40"
-                  >
-                    <span>
+                  <div className="flex items-center justify-between gap-2 rounded-lg border border-line bg-background px-3 py-2 text-sm">
+                    <Link href={`/history/${execution.id}`} className="min-w-0 hover:text-live">
                       {execution.task.title}
                       <span className="block text-xs text-muted">
                         {execution.workflow.name} · {formatRelative(execution.createdAt)}
                       </span>
+                    </Link>
+                    <span className="flex shrink-0 items-center gap-2">
+                      <Link
+                        href={`/observability/${execution.id}`}
+                        className="font-mono text-[10px] uppercase tracking-wider text-muted hover:text-live"
+                      >
+                        Trace
+                      </Link>
+                      <StatusBadge status={execution.status} />
                     </span>
-                    <StatusBadge status={execution.status} />
-                  </Link>
+                  </div>
                 </li>
               ))}
             </ul>

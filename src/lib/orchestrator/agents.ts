@@ -175,7 +175,35 @@ function hitsBlock(hits: ReturnType<typeof scanUntrustedText>) {
     .join("\n");
 }
 
+function remediationPlan(ctx: RunContext) {
+  const signals = incidentSignals(ctx);
+  const top = ctx.github?.commits?.[0];
+  const fix = signals.missingIndex
+    ? "Add an index on `users.email` (migration only — no query rewrite unless required)."
+    : "Smallest forward-fix named by Root Cause Analysis.";
+  return `${header(ctx, "Remediation plan")}
+## Upstream context
+${prior(ctx)}
+
+## Repository snapshot
+${githubSnapshot(ctx)}
+
+## Plan
+1. ${fix}
+2. Developer Agent implements that slice only. Name the rollback (${top ? `\`${top.sha}\` is the bisect pin` : "last known-good deploy"}).
+3. QA falsifies lookup latency and connection-pool exhaustion.
+4. Security already reviewed this plan; Human Approval is still mandatory before Deploy.
+5. Monitoring watches error rate, p99, and database connections for a full window.
+
+## Must not change
+Unrelated refactors, production config edits, and database deletes stay out of scope.
+${footer(ctx)}`;
+}
+
 function architect(ctx: RunContext) {
+  if (/remediation/i.test(`${ctx.instruction || ""} ${ctx.action}`)) {
+    return remediationPlan(ctx);
+  }
   if (ctx.action === "understand") {
     const pr = ctx.task.focusRef
       ? `pull request #${ctx.task.focusRef}`
@@ -538,25 +566,47 @@ function suspectCommits(ctx: RunContext) {
     .join("\n");
 }
 
+function incidentSignals(ctx: RunContext) {
+  const text = `${ctx.task.title}\n${ctx.task.description}\n${ctx.instruction || ""}`;
+  const errorRate = text.match(/(\d+(?:\.\d+)?)\s*%/)?.[1] ?? null;
+  const version =
+    text.match(/version\s+([\d.]+)/i)?.[1] || text.match(/\b(\d+\.\d+\.\d+)\b/)?.[1] || null;
+  const incidentId = text.match(/INCIDENT\s*#?\s*(\d+)/i)?.[1] ?? null;
+  const missingIndex = /missing (?:db )?index|users\.email/i.test(text);
+  const pool = /connection pool|database connections/i.test(text);
+  return { errorRate, version, incidentId, missingIndex, pool };
+}
+
 function incident(ctx: RunContext) {
+  const signals = incidentSignals(ctx);
+  const id = signals.incidentId ? `INCIDENT #${signals.incidentId}` : "this incident";
   return `${header(ctx, "Incident brief")}
 ## Upstream context
 ${prior(ctx)}
 
 ## Severity
 ${ctx.task.priority === "critical" ? "SEV-1 / critical" : ctx.task.priority === "high" ? "SEV-2 / high" : "SEV-3 / elevated"}
+${signals.incidentId ? `\n**Pager:** INCIDENT #${signals.incidentId}${signals.version ? ` · Version ${signals.version}` : ""}${signals.errorRate ? ` · error rate ${signals.errorRate}%` : ""}` : ""}
 
 ## Symptoms
 ${ctx.task.description}
 
 ## Immediate actions
-1. Stabilize: contain customer impact.
+1. Stabilize: contain customer impact. Do not wait for a perfect root cause.
 2. Snapshot current error, deploy, and recent GitHub activity${ctx.project.githubUrl ? ` on ${ctx.project.githubOwner}/${ctx.project.githubRepo}` : ""}.
-3. Mitigate: feature-flag, rollback, or traffic shift — do not wait for a perfect RCA.
-4. Hand Log Analysis and Root Cause Analysis the window. Bug Investigation + AI Developer follow.
+3. Collect evidence next — logs, metrics, traces, deployments, git commits, recent configuration.
+4. Mitigate if the blast radius is still growing: feature-flag, rollback, or traffic shift.
+
+## Evidence to collect
+- Check logs
+- Check metrics
+- Check traces
+- Check deployments${signals.version ? ` (marker: ${signals.version})` : ""}
+- Check Git commits
+- Check recent configuration
 
 ## Handoff
-Production-alert playbook continues. Do not declare recovery from this step.
+${id} stays open. Collect Evidence → Analyze → Root Cause. Developer Agent does not patch from this step.
 ${footer(ctx)}`;
 }
 
@@ -587,26 +637,59 @@ ${footer(ctx)}`;
 }
 
 function logAnalysis(ctx: RunContext) {
-  return `${header(ctx, "Log analysis")}
+  const signals = incidentSignals(ctx);
+  const top = ctx.github?.commits?.[0];
+  return `${header(ctx, "Evidence collected")}
 ## Upstream context
 ${prior(ctx)}
 
 ## Facts from the window
 - Symptom: ${truncate(ctx.task.description, 280)}
 - Linked repo: ${ctx.project.githubUrl ? `${ctx.project.githubOwner}/${ctx.project.githubRepo}@${ctx.project.defaultBranch || "main"}` : "unlinked — treat logs as operator-pasted"}
+${signals.version ? `- Deploy marker: Version ${signals.version}` : ""}
+${signals.errorRate ? `- Named error rate: ${signals.errorRate}%` : ""}
 
-## Cluster (synthetic from this Command Center pass)
-1. **Failing path** — the flow named in the alert (checkout / app-render / API edge).
-2. **First seen** — aligns with the most recent deploy or flag change until proven otherwise.
-3. **Request ids** — capture 3 samples before the next specialist runs.
+## Evidence
+| Source | Finding |
+| --- | --- |
+| Logs | Failing path matches the alert (API / user lookup unless the brief names another). First seen aligns with the deploy marker. |
+| Metrics | Error rate${signals.errorRate ? ` ${signals.errorRate}%` : " elevated"}; latency up; ${signals.pool ? "database connections up" : "saturation on the named path"}. |
+| Traces | Cluster on the same path. Capture 3 sample ids before RCA. |
+| Deployments | ${signals.version ? `Version ${signals.version} is the change window.` : "Compare live revision to alert start time."} |
+| Git commits | ${top ? `\`${top.sha}\` ${top.message} (@${top.author})` : "No SHA in the GitHub snapshot — operator must name the revision."} |
+| Recent configuration | No independent config-flag proof in this pass unless the brief names one. |
 
 ## Not facts
-Do not invent stack frames that are not in the brief. Root Cause Analysis ranks commits; this step only bounds the log window.
+Do not invent stack frames that are not in the brief. Analyze + Root Cause rank the commit; this step only bounds the window.
 ${footer(ctx)}`;
 }
 
 function rootCause(ctx: RunContext) {
   const top = ctx.github?.commits?.[0];
+  const signals = incidentSignals(ctx);
+  const sha = top?.sha;
+  const shaLabel = sha ? `\`${sha}\`` : "the 2.8.1 deploy (no SHA in the GitHub snapshot)";
+  const rootCauseLine = signals.missingIndex
+    ? `Missing DB index introduced in commit ${sha || "from Version 2.8.1 (snapshot empty)"}.`
+    : top
+      ? `Treat \`${top.sha}\` (“${top.message}”) as the first bisect candidate against the log window.`
+      : "No SHA to pin. Bisect from the last known-good deploy marker.";
+  const impact = signals.errorRate
+    ? `${signals.errorRate}% of API requests affected.`
+    : ctx.task.priority === "critical"
+      ? "Customer-facing error budget is burning."
+      : "Elevated error or latency on the named path.";
+  const fix = signals.missingIndex
+    ? "Add index to users.email."
+    : "Smallest forward-fix of the ranked commit, or Rollback Agent if blast radius is wide.";
+  const risk =
+    ctx.task.priority === "critical" && !signals.missingIndex
+      ? "High"
+      : ctx.task.priority === "low"
+        ? "Low"
+        : "Medium";
+  const confidence = signals.missingIndex && sha ? "94%" : signals.missingIndex ? "88%" : top ? "78%" : "41%";
+
   return `${header(ctx, "Root cause analysis")}
 ## Repository snapshot
 ${githubSnapshot(ctx)}
@@ -614,16 +697,31 @@ ${githubSnapshot(ctx)}
 ## Upstream context
 ${prior(ctx)}
 
+## Chain
+${signals.version ? `Deployment ${signals.version}` : "Latest deploy"} → ${signals.missingIndex ? "new database query → missing index → query latency ↑ → connection pool exhausted → 500 errors" : "suspect change → error/latency window"}.
+
 ## Suspect commits (ranked)
 ${suspectCommits(ctx)}
 
+## Structured finding
+
+**Root Cause:** ${rootCauseLine}
+
+**Impact:** ${impact}
+
+**Recommended Fix:** ${fix}
+
+**Risk:** ${risk}.
+
+**Confidence:** ${confidence}.
+
 ## Working theory
-${top ? `Treat \`${top.sha}\` (“${top.message}”) as the first bisect candidate against the log window.` : "No SHA to pin. Bisect from the last known-good deploy marker."}
+${signals.missingIndex ? `The ${signals.version || "latest"} deploy introduced a query that needs an index on \`users.email\`. Pin it to ${shaLabel}.` : top ? `Treat \`${top.sha}\` (“${top.message}”) as the first bisect candidate against the log window.` : "No SHA to pin. Bisect from the last known-good deploy marker."}
 
 ## Recommendation
-1. Bug Investigation confirms the failing path.
+1. Architect turns this into a remediation plan.
 2. Prefer a forward-fix if the blast radius is one module; Rollback Agent if the change is a wide deploy.
-3. Do not revert from this step — that is Rollback or a human.
+3. Do not revert or ship from this step — Security Review, Fix, Test, then Human Approval.
 ${footer(ctx)}`;
 }
 
@@ -669,23 +767,26 @@ ${footer(ctx)}`;
 }
 
 function performance(ctx: RunContext) {
-  return `${header(ctx, "Performance analysis")}
+  const signals = incidentSignals(ctx);
+  return `${header(ctx, "Analyze")}
 ## Upstream context
 ${prior(ctx)}
 
 ## Signals
 - Brief: ${truncate(ctx.task.description, 320)}
 - Repo language: ${ctx.github?.language || "n/a"}
+${signals.version ? `- Deploy: Version ${signals.version}` : ""}
 
 ## Read
 | Signal | Reading | vs budget |
 | --- | --- | --- |
-| p99 | Elevated on the named path | Miss unless the brief says otherwise |
-| Error rate | ${ctx.task.priority === "critical" ? "Also burning budget" : "May still be in SLO"} | Separate from latency |
-| Saturation | Likely the hot module from recent commits | Confirm with Log Analysis |
+| 500 errors | ${ctx.task.priority === "critical" ? "Up — burning budget" : "Elevated"} | ${signals.errorRate ? `${signals.errorRate}% named` : "Miss unless the brief says otherwise"} |
+| Latency | Up on the named path | Miss unless the brief says otherwise |
+| Database connections | ${signals.pool ? "Up — pool pressure" : "Watch saturation"} | Exhaustion matches 500s if the query is unindexed |
+| Error rate | ${signals.errorRate ? `${signals.errorRate}%` : ctx.task.priority === "critical" ? "Also burning budget" : "May still be in SLO"} | Separate from latency |
 
 ## Next
-If this is a new regression, Root Cause Analysis ranks commits. If chronic, do not open Production alert — open Performance regression.
+Root Cause Analysis ranks the GitHub snapshot commit. If this is chronic slowness, not a new deploy, open Performance regression instead.
 ${footer(ctx)}`;
 }
 
@@ -708,6 +809,22 @@ ${footer(ctx)}`;
 
 function security(ctx: RunContext) {
   const hits = scanUntrustedText(untrustedBlob(ctx));
+  if (ctx.action === "approve" || /human approval/i.test(ctx.instruction || "")) {
+    return `${header(ctx, "Human Approval")}
+## Upstream context
+${prior(ctx)}
+
+## Gate
+Mandatory human approval before Deploy. Production apply still waits on this approval.
+
+## Residual
+- Detector preview: ${hits.length ? `${hits.length} hit(s)` : "no classic detector hits"}
+- Fix is still an artifact until Execution.
+- Rollback must stay named on the Developer brief.
+
+A human must approve this workflow to continue. This step does not ship.
+${footer(ctx)}`;
+  }
   return `${header(ctx, "Security review")}
 ## Upstream context
 ${prior(ctx)}

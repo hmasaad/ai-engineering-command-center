@@ -173,7 +173,7 @@ export function proposeTools(input: {
     tools.push({
       name: "observability.get_logs",
       action: "read",
-      arguments: { window: "incident" },
+      arguments: { window: "incident", include: "traces" },
     });
     tools.push({
       name: "observability.get_metrics",

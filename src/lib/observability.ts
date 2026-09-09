@@ -395,7 +395,13 @@ export async function getObservabilityDashboard() {
         workflow: true,
         task: true,
         project: true,
-        spans: { include: { agent: true }, orderBy: { order: "asc" } },
+        spans: {
+          include: {
+            agent: true,
+            step: { include: { gatewayEvents: { orderBy: { createdAt: "asc" } } } },
+          },
+          orderBy: { order: "asc" },
+        },
         _count: { select: { approvals: true } },
       },
       orderBy: { createdAt: "desc" },
@@ -521,10 +527,16 @@ export async function getExecutionTrace(executionId: string) {
       task: true,
       workflow: true,
       spans: {
-        include: { agent: true, step: true },
+        include: {
+          agent: true,
+          step: { include: { gatewayEvents: { orderBy: { createdAt: "asc" } } } },
+        },
         orderBy: { order: "asc" },
       },
-      steps: { include: { agent: true, gatewayEvents: true }, orderBy: { order: "asc" } },
+      steps: {
+        include: { agent: true, gatewayEvents: { orderBy: { createdAt: "asc" } } },
+        orderBy: { order: "asc" },
+      },
       events: { orderBy: { createdAt: "asc" } },
     },
   });
@@ -537,6 +549,9 @@ const BOARD_AGENT_SLUGS = [
   "pr-reviewer",
   "verification",
   "architect",
+  "incident-response",
+  "monitoring",
+  "root-cause",
 ];
 
 export async function getCommandCenterBoard() {

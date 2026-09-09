@@ -37,6 +37,17 @@ export function formatDateTime(date: Date | string | null | undefined) {
   return d.toISOString().replace("T", " ").slice(0, 16) + " UTC";
 }
 
+export function formatClock(date: Date | string | null | undefined) {
+  if (!date) return "—";
+  const d = typeof date === "string" ? new Date(date) : date;
+  return d.toLocaleTimeString("en-GB", {
+    hour12: false,
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+}
+
 export function parseJson<T>(value: string | null | undefined, fallback: T): T {
   if (!value) return fallback;
   try {

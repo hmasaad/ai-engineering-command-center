@@ -185,8 +185,8 @@ const ROLE_DEFAULTS: Record<string, RoleDefaults> = {
     riskLevel: "medium",
   },
   log_analysis: {
-    tools: ["artifact.write", "observability.get_logs"],
-    permissions: ["write_artifact", "read_logs"],
+    tools: ["artifact.write", ...OBS, "github.read_file"],
+    permissions: ["write_artifact", "read_logs", "read_metrics", "read_repository"],
     riskLevel: "medium",
   },
   root_cause: {

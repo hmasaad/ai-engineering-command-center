@@ -39,7 +39,7 @@ export default async function ApprovalsPage() {
       <PageHeader
         kicker="Human-in-the-loop"
         title="Approval queue"
-        description="The first version is not fully autonomous. Low risk runs automatically. Medium risk asks for a review. High and critical risk wait here."
+        description="The first version is not fully autonomous. AI suggests, a human approves, the system executes. Controlled autonomy is the risk splitter: low automatic, medium approval, high mandatory human."
         actions={<PrimaryLink href="/security/tools">Tool Layer</PrimaryLink>}
       />
 

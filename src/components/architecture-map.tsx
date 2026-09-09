@@ -34,7 +34,7 @@ export function ArchitectureMap({
         </Link>
       </div>
       <p className="mb-4 text-xs text-muted">
-        Policy, verification, observability, and human-in-the-loop sit in front of Execution. Low-risk work is automatic. High-risk work is not.
+        Observability, gateway, incident response, and execution close a loop around the orchestrator. Policy still sits in front of every tool.
       </p>
 
       <div className="mb-4 grid gap-2 sm:grid-cols-3">

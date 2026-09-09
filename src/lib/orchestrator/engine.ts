@@ -34,6 +34,18 @@ function priorHumanGateApproved(
   });
 }
 
+function skipHoldAfterHumanGate(
+  decision: { hitl: { mode: string }; tool: { name: string } },
+  steps: Array<{ name: string; status: string; approvals?: Array<{ status: string }> }>,
+) {
+  if (!priorHumanGateApproved(steps)) return false;
+  if (decision.hitl.mode === "recommended") return true;
+  return (
+    decision.hitl.mode === "mandatory" &&
+    /^(deploy\.apply|rollback\.apply)$/.test(decision.tool.name)
+  );
+}
+
 async function addEvent(
   executionId: string,
   type: string,
@@ -493,10 +505,7 @@ export async function runUntilPause(executionId: string) {
       }
 
       if (pre.decision.verdict === "human") {
-        if (
-          pre.decision.hitl.mode === "recommended" &&
-          priorHumanGateApproved(execution.steps)
-        ) {
+        if (skipHoldAfterHumanGate(pre.decision, execution.steps)) {
           await db.gatewayEvent.update({
             where: { id: preEvent.id },
             data: { verdict: "allow", status: "allowed", summary: `${pre.decision.summary} · human gate already cleared` },
@@ -582,10 +591,7 @@ export async function runUntilPause(executionId: string) {
       }
 
       if (post.decision.verdict === "human") {
-        if (
-          post.decision.hitl.mode === "recommended" &&
-          priorHumanGateApproved(execution.steps)
-        ) {
+        if (skipHoldAfterHumanGate(post.decision, execution.steps)) {
           await db.gatewayEvent.update({
             where: { id: postEvent.id },
             data: {

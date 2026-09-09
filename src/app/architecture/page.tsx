@@ -1,6 +1,24 @@
 import Link from "next/link";
 import { ControlPlaneAscii } from "@/components/control-plane";
+import {
+  FeedbackLoopAscii,
+  FeedbackLoopLive,
+  FeedbackLoopNodes,
+  FeedbackLoopWalkAscii,
+} from "@/components/feedback-loop";
 import { HitlAscii, HitlTable } from "@/components/hitl";
+import { IncidentResponseAscii } from "@/components/incident-response";
+import {
+  AutonomyControlledAscii,
+  AutonomyExampleCards,
+  AutonomyInitialAscii,
+  AutonomyUnsafeAscii,
+} from "@/components/autonomous-execution";
+import {
+  ObservabilityAscii,
+  ObservabilityCaptureTree,
+  ObservabilityExampleLog,
+} from "@/components/observability-layer";
 import {
   SecurityGatewayAscii,
   SecurityGatewayChecks,
@@ -9,8 +27,10 @@ import {
 import { TaskGraphAscii } from "@/components/task-graph";
 import { GhostLink, PageHeader } from "@/components/ui";
 import { CONTROL_PLANE } from "@/lib/control-plane";
+import { getFeedbackLoopLive } from "@/lib/feedback-loop";
 
-export default function ArchitecturePage() {
+export default async function ArchitecturePage() {
+  const loop = await getFeedbackLoopLive();
   const tools = CONTROL_PLANE.find((layer) => layer.id === "tools");
   const agents = CONTROL_PLANE.find((layer) => layer.id === "agents");
   const linear = CONTROL_PLANE.filter(
@@ -24,7 +44,7 @@ export default function ArchitecturePage() {
       <PageHeader
         kicker="Control plane"
         title="Architecture"
-        description="Once agents can modify code, deploy applications, access databases, or respond to production incidents, policy, permissions, verification, and risk are not optional extras. They are the path."
+        description="These are not four separate features. Observability, the Security Gateway, incident response, and agent execution form a feedback loop around the orchestrator."
         actions={<GhostLink href="/">Command Center</GhostLink>}
       />
 
@@ -49,6 +69,68 @@ export default function ArchitecturePage() {
         </div>
         <div className="mt-6">
           <SecurityGatewayChecks />
+        </div>
+      </div>
+
+      <div className="mt-8">
+        <ObservabilityAscii />
+        <p className="mt-3 max-w-3xl text-xs text-muted">
+          Security is the gate. Observability is the flight recorder. Once you have an orchestrator and several specialists, a failure is un-debugable without agent input, tools, tokens, cost, duration, and the gateway decision.
+        </p>
+        <div className="mt-6">
+          <ObservabilityCaptureTree />
+        </div>
+        <div className="mt-6">
+          <ObservabilityExampleLog />
+        </div>
+      </div>
+
+      <div className="mt-8">
+        <IncidentResponseAscii />
+        <p className="mt-3 max-w-3xl text-xs text-muted">
+          A production 500 spike is not a dashboard tour. The Command Center starts a workflow: evidence, RCA, remediation, security, fix, test, human approval, deploy, monitor.
+        </p>
+      </div>
+
+      <div className="mt-8">
+        <div className="grid gap-3 lg:grid-cols-2">
+          <AutonomyInitialAscii />
+          <AutonomyControlledAscii />
+        </div>
+        <div className="mt-3">
+          <AutonomyUnsafeAscii />
+        </div>
+        <p className="mt-3 max-w-3xl text-xs text-muted">
+          The first version always waits: AI suggests, a human approves, then the system executes. Controlled autonomy comes later — detect, investigate, plan, risk evaluation — then low is automatic, medium is approval, high is mandatory human. That is safer than unconstrained execution.
+        </p>
+        <div className="mt-6">
+          <AutonomyExampleCards />
+        </div>
+      </div>
+
+      <div className="mt-8">
+        <FeedbackLoopAscii />
+        <p className="mt-3 max-w-3xl text-xs text-muted">
+          Gateway, observability, incident response, and execution are one cycle. A signal comes back as a workflow; every action still hits the gateway; the trace closes the loop.
+        </p>
+        <div className="mt-3">
+          <FeedbackLoopNodes />
+        </div>
+        <div className="mt-6 grid gap-3 lg:grid-cols-2">
+          <FeedbackLoopWalkAscii />
+          {loop ? (
+            <FeedbackLoopLive
+              title={loop.title}
+              status={loop.status}
+              href={loop.href}
+              historyHref={loop.historyHref}
+              stages={loop.stages}
+            />
+          ) : (
+            <p className="self-center text-sm text-muted">
+              Run Production alert to see this loop on a live execution.
+            </p>
+          )}
         </div>
       </div>
 

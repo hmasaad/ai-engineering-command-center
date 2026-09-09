@@ -1,5 +1,12 @@
 import Link from "next/link";
 import { ActionEventJson, CommandCenterBoard } from "@/components/command-center-board";
+import {
+  ObservabilityAscii,
+  ObservabilityCaptureTree,
+  ObservabilityExampleLog,
+  ObservabilityQuestions,
+} from "@/components/observability-layer";
+import { FeedbackLoopAscii, FeedbackLoopWalkAscii } from "@/components/feedback-loop";
 import { SpanTree } from "@/components/span-tree";
 import { EmptyState, GhostLink, PageHeader, StatusBadge } from "@/components/ui";
 import {
@@ -23,9 +30,20 @@ export default async function ObservabilityPage() {
       <PageHeader
         kicker="Observability"
         title="Agent Observability"
-        description="Every specialist action produces an event: workflow, agent, tool, risk, duration, tokens, status. You cannot approve what you cannot see."
+        description="Security asks whether an action should be allowed. Observability asks what the AI system actually did — which agent, which tools, what the model received, tokens, cost, duration, and why."
         actions={<GhostLink href="/history">Execution history</GhostLink>}
       />
+
+      <div className="mb-8 space-y-6">
+        <ObservabilityAscii />
+        <div className="grid gap-3 lg:grid-cols-2">
+          <FeedbackLoopAscii />
+          <FeedbackLoopWalkAscii />
+        </div>
+        <ObservabilityQuestions />
+        <ObservabilityCaptureTree />
+        <ObservabilityExampleLog />
+      </div>
 
       <CommandCenterBoard
         workflows={board.workflows}
